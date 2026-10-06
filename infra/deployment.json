@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_7vJNs1eQcZDnJCP3o1WNk5awdfV2",
-    "deploymentUrl": "https://potato-potential-pxn7mnmq2-venatio-studios.vercel.app",
-    "sourceCommit": "d55f3c6083578e60e68a627b26479d50d4cd9004",
+    "deploymentId": "dpl_96xnHkHgswEjrjjXVJbtC5uwK5QX",
+    "deploymentUrl": "https://potato-potential-e32cyi3k3-venatio-studios.vercel.app",
+    "sourceCommit": "4107eb7871ea6c31ad1b2d954898aec494d678f3",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -56,7 +56,7 @@
     "appsCatalog": "live owner catalog: first 24, next 24, Gmail search and connections passed; adapter normalizes Agent37 items; browser retry and stale-page checks passed",
     "appsLayout": "compact horizontal cards with provider logos, fallback initials and Connect controls; Composio hidden in catalog and connected list; five browser regressions and desktop/mobile visual checks passed",
     "welcomeArtwork": "original SVG feature overview; selected accent color; desktop workspace and mobile layout checks passed",
-    "brandIcon": "supplied transparent brain image used in shared wordmark; 64px browser and 180px home-screen icons; desktop/mobile checks, live asset integrity and metadata verified",
+    "brandIcon": "supplied minimalist transparent brain image used in shared wordmark; desktop/mobile and production rendering checks passed; live asset matches supplied file; existing browser and home-screen icons retained",
     "phoneInput": "national formatting, international paste, country switching, incomplete input, canonical storage and mobile layout passed"
   }
 }
