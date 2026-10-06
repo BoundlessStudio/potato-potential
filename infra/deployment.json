@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_3MERjWCYMcWR7LGnMHVNvPediiBK",
-    "deploymentUrl": "https://potato-potential-4bbwvjpun-venatio-studios.vercel.app",
-    "sourceCommit": "2987fcd88aecc97ea96cc7d0f163d0f1b0ebbf53",
+    "deploymentId": "dpl_AbYHxj2yrmMSr7oTTPHWxpQ4mZhy",
+    "deploymentUrl": "https://potato-potential-5sqdfoca0-venatio-studios.vercel.app",
+    "sourceCommit": "a7b4677e675a9dca19b85ed02f7d95bd67b86cbd",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -64,6 +64,8 @@
     "welcomeArtwork": "original SVG feature overview; selected accent color; desktop workspace and mobile layout checks passed",
     "brandIcon": "supplied Potato Potential wordmark replaces shared Boundless headers; supplied mascot cluster provides 64px browser and 180px home-screen icons; transparent padding trimmed; published assets match prepared supplied artwork; desktop, narrow mobile, workspace and operator layout checks passed",
     "productBranding": "Potato Potential page titles, footer, connection confirmation and invitation email sender/title/artwork; internal ownership identifiers retained",
+    "socialCard": "built-in imagegen card with supplied wordmark and mascots; opaque 1733x907 PNG; live crawler request returns 200 and exact generated image bytes; Open Graph and X metadata include the canonical public image, dimensions and alternative text",
+    "searchMetadata": "live custom domain canonical links, title and description verified; initial HTML includes public homepage content and website/organization/application JSON-LD; homepage-only sitemap and robots.txt verified; sign-in, operator and connection routes have noindex metadata; API/auth/workflow endpoints have noindex headers; desktop/mobile page and post-check beta form readiness passed",
     "phoneInput": "national formatting, international paste, country switching, incomplete input, canonical storage and mobile layout passed"
   }
 }
