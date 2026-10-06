@@ -99,33 +99,6 @@ const partners = [
   },
 ] as const;
 
-const projectSteps = [
-  {
-    number: "01",
-    title: "Find the good stuff.",
-    icon: Search,
-    text: "Research the landscape with Brave, read the sources, and gather a brief you can actually use.",
-  },
-  {
-    number: "02",
-    title: "Give the idea a home.",
-    icon: BookOpen,
-    text: "Save the findings in your wiki. Pull relevant context from connected apps and agree on the next tasks.",
-  },
-  {
-    number: "03",
-    title: "Make something real.",
-    icon: Terminal,
-    text: "Work in the browser, write a script, shape a dataset, or put together files on the persistent computer.",
-  },
-  {
-    number: "04",
-    title: "Bring it back to you.",
-    icon: MessageCircle,
-    text: "Save the deliverable, update the task, and share the result through a connected channel. Pick up the next step together.",
-  },
-];
-
 export function BigPossibilities() {
   return (
     <section
@@ -390,45 +363,6 @@ export function BigPossibilities() {
               </a>
             </div>
           </details>
-        </div>
-      </div>
-
-      <div className={styles.project}>
-        <div className={styles.projectHeading}>
-          <span className={styles.eyebrow}>
-            AN EXAMPLE OF THE PIECES COMING TOGETHER
-          </span>
-          <h3>
-            “Help me get this project <em>off the ground.</em>”
-          </h3>
-          <p>
-            A big possibility can start with one sentence. Agree on the scope,
-            connect the tools it needs, and let the little steps grow.
-          </p>
-        </div>
-        <ol className={styles.projectSteps}>
-          {projectSteps.map((step) => {
-            const Icon = step.icon;
-            return (
-              <li key={step.number}>
-                <div className={styles.projectStepTop}>
-                  <span>{step.number}</span>
-                  <Icon size={21} aria-hidden="true" />
-                </div>
-                <h4>{step.title}</h4>
-                <p>{step.text}</p>
-              </li>
-            );
-          })}
-        </ol>
-        <div className={styles.projectFooter}>
-          <span>
-            <Sprout size={20} aria-hidden="true" /> Got a bigger “what if”?
-          </span>
-          <a href="#join-beta">
-            Let’s make room for it
-            <ArrowRight size={17} aria-hidden="true" />
-          </a>
         </div>
       </div>
     </section>

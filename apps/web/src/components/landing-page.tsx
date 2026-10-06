@@ -121,7 +121,6 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
         <nav aria-label="Homepage" className={styles.navigation}>
           <a href="#possibilities">Little possibilities</a>
           <a href="#big-possibilities">Big possibilities</a>
-          <a href="#how-it-works">How it works</a>
         </nav>
         <div className={`welcome-navigation ${styles.account}`}>
           <Link href="/signin">
@@ -320,56 +319,6 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
       </section>
 
       <BigPossibilities />
-
-      <section
-        id="how-it-works"
-        className={styles.how}
-        aria-labelledby="how-title"
-      >
-        <div className={styles.howTitle}>
-          <span className={styles.eyebrow}>FROM HELLO TO “HEY, CAN YOU…”</span>
-          <h2 id="how-title">
-            Good things
-            <br />
-            <em>start small.</em>
-          </h2>
-          <a href="#join-beta" className={styles.joinLink}>
-            Find your little sidekick <ArrowRight size={18} />
-          </a>
-        </div>
-        <ol className={styles.steps}>
-          <li>
-            <span className={styles.stepNumber}>01</span>
-            <div>
-              <h3>Save yourself a spot.</h3>
-              <p>
-                Join the beta list. We review requests and send invitations as
-                places open up.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span className={styles.stepNumber}>02</span>
-            <div>
-              <h3>Make a little introduction.</h3>
-              <p>
-                A name, a face, a little personality. Set up a companion that
-                feels like yours.
-              </p>
-            </div>
-          </li>
-          <li>
-            <span className={styles.stepNumber}>03</span>
-            <div>
-              <h3>Start with one small thing.</h3>
-              <p>
-                A task, an idea, a Sunday routine. Give it a home, and build
-                from there together.
-              </p>
-            </div>
-          </li>
-        </ol>
-      </section>
 
       <section className={styles.faq} aria-labelledby="faq-title">
         <div className={styles.sectionIntro}>

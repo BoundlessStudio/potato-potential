@@ -53,8 +53,8 @@ test("big possibilities supports keyboard exploration and keeps signup as a sepa
   await expect(progress).toHaveAttribute("open", "");
   await expect(progress).toContainText("recover interrupted streams");
 
-  await section
-    .getByRole("link", { name: "Let’s make room for it", exact: true })
+  await page
+    .getByRole("link", { name: "Let’s grow something good", exact: true })
     .click();
   await expect(page).toHaveURL(/#join-beta$/);
   await expect(
@@ -121,7 +121,7 @@ test("homepage examples and FAQs are explorable without creating work or joining
     ),
   ).not.toBeVisible();
   await page
-    .getByRole("link", { name: "Find your little sidekick", exact: true })
+    .getByRole("link", { name: "Let’s grow something good", exact: true })
     .click();
   await expect(page).toHaveURL(/#join-beta$/);
   await expect(
