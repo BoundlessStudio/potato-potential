@@ -108,10 +108,10 @@ export function Brand({ small = false }: { small?: boolean }) {
   return (
     <div className={`brand ${small ? "brand-small" : ""}`}>
       <Image
-        src="/brand/boundless-icon.png"
+        src="/brand/boundless-mark-minimal.png"
         className="brand-mark"
-        width={36}
-        height={36}
+        width={1295}
+        height={1214}
         sizes="36px"
         alt=""
         loading="eager"
