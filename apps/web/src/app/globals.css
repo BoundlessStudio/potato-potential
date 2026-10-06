@@ -243,32 +243,20 @@ label small {
   align-self: flex-start;
 }
 .brand {
-  display: flex;
-  gap: 8px;
+  display: inline-flex;
   align-items: center;
-  font-family: "Manrope", sans-serif;
-  font-size: 26px;
-  font-weight: 800;
-  letter-spacing: -1.25px;
-  color: #393241;
-  white-space: nowrap;
+  flex-shrink: 0;
+  max-width: 100%;
 }
-.brand-mark {
+.brand-image {
   display: block;
-  width: 36px;
-  height: 36px;
+  width: 220px;
+  height: auto;
   object-fit: contain;
-  flex: none;
+  max-width: 100%;
 }
-.brand-period {
-  color: var(--purple);
-}
-.brand-small {
-  font-size: 21px;
-}
-.brand-small .brand-mark {
-  width: 29px;
-  height: 29px;
+.brand-small .brand-image {
+  width: 170px;
 }
 .status-dot {
   display: inline-block;
@@ -354,6 +342,9 @@ label small {
 }
 .sidebar .brand {
   margin: 1px 8px 38px;
+}
+.sidebar .brand-image {
+  width: 176px;
 }
 .sidebar-label {
   font-size: 9px;
@@ -2369,7 +2360,7 @@ label small {
 }
 .welcome-navigation {
   position: absolute;
-  top: 38px;
+  top: 48px;
   right: 40px;
 }
 .entry-signin-link {
@@ -2404,19 +2395,15 @@ label small {
 }
 @media (max-width: 760px) {
   .welcome-navigation {
-    top: 25px;
+    top: 30px;
     right: 20px;
   }
   .welcome-navigation .button {
     padding: 8px 10px;
     font-size: 11px;
   }
-  .welcome-brand .brand {
-    font-size: 21px;
-  }
-  .welcome-brand .brand-mark {
-    width: 29px;
-    height: 29px;
+  .welcome-brand .brand-image {
+    width: 150px;
   }
   .beta-review-count {
     display: block;
@@ -2932,12 +2919,10 @@ label small {
     padding: 28px 16px 18px;
   }
   .sidebar .brand {
-    font-size: 24px;
     margin-left: 5px;
   }
-  .brand-mark {
-    width: 33px;
-    height: 33px;
+  .sidebar .brand-image {
+    width: 158px;
   }
   .nav-item {
     font-size: 12px;

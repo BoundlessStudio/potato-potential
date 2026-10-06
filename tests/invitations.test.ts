@@ -18,7 +18,7 @@ it("sends the registered link through Resend with the verified sender and idempo
   const fetcher = vi.fn<typeof fetch>(async (_url, options) => {
     const body = JSON.parse(options!.body as string);
     expect(body).toMatchObject({
-      from: "Boundless <invites@example.com>",
+      from: "Potato Potential <invites@example.com>",
       to: [invitation.email],
     });
     expect(body.text).toContain(invitation.url);

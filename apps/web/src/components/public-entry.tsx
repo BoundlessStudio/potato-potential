@@ -62,7 +62,7 @@ export function PublicEntry({
   return (
     <main className="welcome-page">
       <div className="welcome-brand">
-        <Link href="/" aria-label="Boundless home">
+        <Link href="/" aria-label="Potato Potential home">
           <Brand />
         </Link>
       </div>
@@ -206,7 +206,7 @@ export function PublicEntry({
         )}
       </section>
       <span className="welcome-footer">
-        boundless · good things happen together
+        potato potential · good things happen together
       </span>
     </main>
   );

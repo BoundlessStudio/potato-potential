@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { OperatorWorkspace } from "@/components/operator-workspace";
 
 export const metadata: Metadata = {
-  title: "Beta list — Boundless",
+  title: "Beta list — Potato Potential",
 };
 
 export default function InvitationsPage() {

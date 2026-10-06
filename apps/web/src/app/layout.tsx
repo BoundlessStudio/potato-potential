@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 export const metadata: Metadata = {
-  title: "Boundless — a little help, a lot of possibility",
+  title: "Potato Potential — a little help, a lot of possibility",
   description:
     "Your own personal agent. A little curious. Always in your corner.",
 };

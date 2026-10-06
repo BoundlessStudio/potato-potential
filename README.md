@@ -1,6 +1,8 @@
-# Boundless companions
+# Potato Potential
 
 An invite-only personal agent beta: one customer, one named companion, one persistent Agent37 computer. Built with Next.js and Vercel Workflows, Supabase, and the Dots desktop / Instinct Inkbox recipes. Original SVG companions and a playful workspace cover Chat, Tasks, Wiki, Routines, Apps, and Settings.
+
+The shared headers use the supplied Potato Potential wordmark, with empty transparent margins trimmed for readable sizing. The supplied mascot cluster provides the browser and phone home-screen icons. Public page titles, the footer, connection confirmation, and invitation emails use Potato Potential branding.
 
 Production: [potato-potential.rgbknights.com](https://potato-potential.rgbknights.com). Both the Vercel and Supabase projects are named `potato-potential`. The custom domain uses a Cloudflare DNS-only CNAME and Vercel HTTPS. Sign-in callbacks and agent workspace callbacks use this origin. Non-secret deployment identifiers are recorded in `infra/deployment.json`.
 

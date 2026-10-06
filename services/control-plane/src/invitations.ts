@@ -41,11 +41,11 @@ export async function sendInvitationEmail(
       },
       signal: AbortSignal.timeout(20_000),
       body: JSON.stringify({
-        from: `Boundless <${config.invitationFrom}>`,
+        from: `Potato Potential <${config.invitationFrom}>`,
         to: [email],
-        subject: "You’re invited to Boundless",
-        text: `You’re invited to the Boundless beta.\n\nMeet a personal companion with a computer of their own.\n\nAccept your invitation: ${url}\n\nSign in with ${email}. This invitation expires in seven days.\n\nIf you weren’t expecting this invitation, you can ignore it.`,
-        html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:32px auto;padding:28px;color:#514165"><h1 style="font-size:26px">A little invitation.</h1><p>You’re invited to the Boundless beta. Meet a personal companion with a computer of their own.</p><p style="margin:28px 0"><a href="${escape(url)}" style="background:#7659e8;color:white;padding:14px 22px;border-radius:10px;text-decoration:none">Accept invitation</a></p><p>Sign in with <strong>${escape(email)}</strong>. Your invitation expires in seven days.</p><p style="font-size:12px;color:#887897">If you weren’t expecting this invitation, you can ignore it.</p></div>`,
+        subject: "You’re invited to Potato Potential",
+        text: `You’re invited to the Potato Potential beta.\n\nMeet a personal companion with a computer of their own.\n\nAccept your invitation: ${url}\n\nSign in with ${email}. This invitation expires in seven days.\n\nIf you weren’t expecting this invitation, you can ignore it.`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:32px auto;padding:28px;color:#514165"><img src="${escape(config.webOrigin)}/brand/potato-potential-wordmark.png" width="220" height="65" alt="Potato Potential" style="display:block;width:220px;max-width:100%;height:auto;margin-bottom:28px" /><h1 style="font-size:26px">A little invitation.</h1><p>You’re invited to the Potato Potential beta. Meet a personal companion with a computer of their own.</p><p style="margin:28px 0"><a href="${escape(url)}" style="background:#7659e8;color:white;padding:14px 22px;border-radius:10px;text-decoration:none">Accept invitation</a></p><p>Sign in with <strong>${escape(email)}</strong>. Your invitation expires in seven days.</p><p style="font-size:12px;color:#887897">If you weren’t expecting this invitation, you can ignore it.</p></div>`,
       }),
     });
     const body = await response.json().catch(() => null);

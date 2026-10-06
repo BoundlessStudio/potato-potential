@@ -53,7 +53,7 @@ export default function Connected() {
         <h1>{state}</h1>
         <p>You can return to your companion whenever you’re ready.</p>
         <a className="button button-primary" href="/">
-          Back to Boundless
+          Back to Potato Potential
         </a>
       </div>
     </main>
