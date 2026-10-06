@@ -104,7 +104,13 @@ export function Companion({
     </svg>
   );
 }
-export function Brand({ small = false }: { small?: boolean }) {
+export function Brand({
+  small = false,
+  sizes = "(max-width: 760px) 180px, 220px",
+}: {
+  small?: boolean;
+  sizes?: string;
+}) {
   return (
     <div className={`brand ${small ? "brand-small" : ""}`}>
       <Image
@@ -112,7 +118,7 @@ export function Brand({ small = false }: { small?: boolean }) {
         className="brand-image"
         width={1644}
         height={482}
-        sizes="(max-width: 760px) 180px, 220px"
+        sizes={sizes}
         alt="Potato Potential"
         loading="eager"
       />

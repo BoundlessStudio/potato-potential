@@ -81,6 +81,7 @@ const err = (error: unknown) =>
     ? error.message
     : "Something interrupted that request.";
 export default function Home() {
+  const [hydrated, setHydrated] = useState(false);
   const [booting, setBooting] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -192,6 +193,7 @@ export default function Home() {
     return data;
   }, [selectedSession, agent?.mainSessionId]);
   useEffect(() => {
+    setHydrated(true);
     const url = new URL(window.location.href);
     const invitation = url.searchParams.get("invite");
     if (invitation) {
@@ -416,7 +418,19 @@ export default function Home() {
     window.location.reload();
   }
 
-  if (booting) return <PublicEntry checkingSession />;
+  // Keep the public homepage in server HTML; show only the brand while the browser checks the account.
+  if (booting)
+    return hydrated ? (
+      <main
+        className="boot-screen"
+        role="status"
+        aria-label="Loading Potato Potential"
+      >
+        <Brand sizes="(max-width: 384px) calc(100vw - 64px), 320px" />
+      </main>
+    ) : (
+      <PublicEntry checkingSession />
+    );
   if (!signedIn)
     return (
       <>
@@ -1434,7 +1448,6 @@ function Setup({
     <main className="setup-page">
       <Brand />
       <div className="setup-card">
-        <Companion avatar={profile?.avatar} color={profile?.color} size={145} />
         <span className="eyebrow">A FEW LITTLE THINGS COMING TOGETHER</span>
         <h1>
           {agent.status === "deleting"
