@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_Er7PpomSixk6WKverewLrVCZ5Ejd",
-    "deploymentUrl": "https://potato-potential-kiqwustg4-venatio-studios.vercel.app",
-    "sourceCommit": "fe46ef27b6938b476199cc6ad8c326215619be73",
+    "deploymentId": "dpl_EU7SE1FWYxjrXjMqYV77qgs3CktD",
+    "deploymentUrl": "https://potato-potential-7kat109l1-venatio-studios.vercel.app",
+    "sourceCommit": "123d2c69143b219e18aadae3c1b08bd4b90222d0",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -15,7 +15,13 @@
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
     "region": "us-east-2",
-    "migrations": ["202610050001", "202610050002", "202610050003", "202610060001"],
+    "migrations": [
+      "202610050001",
+      "202610050002",
+      "202610050003",
+      "202610060001",
+      "20261006182258"
+    ],
     "siteUrl": "https://potato-potential.rgbknights.com",
     "redirectUrl": "https://potato-potential.rgbknights.com/auth/callback"
   },
@@ -40,8 +46,8 @@
   "validation": {
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 89,
-    "mockBrowserTests": 25,
+    "unitAdapterDatabaseTests": 101,
+    "mockBrowserTests": 27,
     "githubChecks": "passed for deployed source commit",
     "securityRecovery": "Migration 202610060001 applied and recorded before the app release. Custom domain resolves to the recorded deployment. GitHub CI passed 89 unit/adapter/database tests, 25 browser tests, typecheck and production build. Live checks verified server-only invitation RPC privileges, invalid acceptance rollback, retry preservation of edited profiles, operator-only endpoints, consumed-token denial after account deletion and fresh invitation acceptance for a new account with the same email. Public beta signup remains normalized and deduplicated without enrolling a customer. Temporary Auth/customer/invitation/beta fixtures removed; no external email or provider computer created. Pause/resume recovery, phone-code locking, onboarding freezing, cold-wake allowance, delayed takeover and signing-key reuse were checked with mocked providers. No desktop image update required.",
     "dependencyAudit": "Production dependencies: zero known vulnerabilities. Full dependency audit flags the development-only concurrently/shell-quote chain under GHSA-pqg4-j6r4-53mv; upgrading shell-quote to 1.11.0 is a separate follow-up.",
@@ -73,6 +79,7 @@
     "productBranding": "Potato Potential page titles, footer, connection confirmation and invitation email sender/title/artwork; internal ownership identifiers retained",
     "socialCard": "built-in imagegen card with supplied wordmark and mascots; opaque 1733x907 PNG; live crawler request returns 200 and exact generated image bytes; Open Graph and X metadata include the canonical public image, dimensions and alternative text",
     "searchMetadata": "live custom domain canonical links, title and description verified; initial HTML includes public homepage content and website/organization/application JSON-LD; homepage-only sitemap and robots.txt verified; sign-in, operator and connection routes have noindex metadata; API/auth/workflow endpoints have noindex headers; desktop/mobile page and post-check beta form readiness passed",
-    "phoneInput": "national formatting, international paste, country switching, incomplete input, canonical storage and mobile layout passed"
+    "phoneInput": "national formatting, international paste, country switching, incomplete input, canonical storage and mobile layout passed",
+    "accountClosure": "Migration 20261006182258 applied through the scoped Management API before the app deployment. Auth erasure is blocked until both provider removals are confirmed; ancillary invitations/beta records/owner leases are erased with Auth, and jobs cascade through a foreign key. GitHub CI passed 101 unit/adapter/database tests, 27 browser tests, typecheck and build. A disposable verified account with exactly one Agent37 instance, one Inkbox identity and a scoped runtime key closed through the production account API and Vercel workflow. Provider GETs returned 404, scoped access was rejected, Auth was gone, and all ten linked application tables were empty for that account. Delayed job insertion was rejected; existing customers and provider resources remained. Temporary fixtures removed without email/messages or phone provisioning. Provider failure/retry order, renamed identity recovery and lost-create/delete replies were checked with mock providers."
   }
 }
