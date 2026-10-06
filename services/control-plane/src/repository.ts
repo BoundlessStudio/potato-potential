@@ -10,6 +10,16 @@ import type {
 } from "@boundless/shared";
 import { HttpError } from "./security";
 
+export type BetaRequest = {
+  email: string;
+  createdAt: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  sentAt?: string;
+  invitationBox?: string;
+  expiresAt?: string;
+};
+
 export interface Repository {
   profile(ownerId: string): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<void>;
@@ -29,6 +39,10 @@ export interface Repository {
     expiresAt: string,
   ): Promise<void>;
   invitations(): Promise<any[]>;
+  pendingInvitation(email: string): Promise<string | null>;
+  addBetaRequest(email: string): Promise<void>;
+  betaRequests(): Promise<BetaRequest[]>;
+  saveBetaRequest(request: BetaRequest): Promise<void>;
   items(ownerId: string, kind?: string): Promise<WorkspaceItem[]>;
   item(ownerId: string, id: string): Promise<WorkspaceItem | null>;
   saveItem(item: WorkspaceItem): Promise<void>;
@@ -55,6 +69,7 @@ export class MemoryRepository implements Repository {
     { email: string; expiresAt: string; usedBy?: string }
   >();
   locks = new Map<string, Promise<void>>();
+  betaRows = new Map<string, BetaRequest>();
   async profile(id: string) {
     return structuredClone(this.profiles.get(id) || null);
   }
@@ -95,10 +110,32 @@ export class MemoryRepository implements Repository {
     invitation.usedBy = ownerId;
   }
   async createInvitation(email: string, digest: string, expiresAt: string) {
-    this.invites.set(digest, { email: email.toLowerCase(), expiresAt });
+    if (!this.invites.has(digest))
+      this.invites.set(digest, { email: email.toLowerCase(), expiresAt });
   }
   async invitations() {
     return [...this.invites.values()];
+  }
+  async pendingInvitation(email: string) {
+    return (
+      [...this.invites.entries()].find(
+        ([, invitation]) =>
+          invitation.email === email.toLowerCase() &&
+          !invitation.usedBy &&
+          Date.parse(invitation.expiresAt) > Date.now(),
+      )?.[0] || null
+    );
+  }
+  async addBetaRequest(email: string) {
+    email = email.toLowerCase();
+    if (!this.betaRows.has(email))
+      this.betaRows.set(email, { email, createdAt: new Date().toISOString() });
+  }
+  async betaRequests() {
+    return [...this.betaRows.values()].map((row) => structuredClone(row));
+  }
+  async saveBetaRequest(request: BetaRequest) {
+    this.betaRows.set(request.email, structuredClone(request));
   }
   async items(ownerId: string, kind?: string) {
     return [...this.itemRows.values()]
@@ -270,11 +307,14 @@ export class SupabaseRepository implements Repository {
   }
   async createInvitation(email: string, digest: string, expiresAt: string) {
     this.check(
-      await this.client.from("invitations").insert({
-        email: email.toLowerCase(),
-        token_hash: digest,
-        expires_at: expiresAt,
-      }),
+      await this.client.from("invitations").upsert(
+        {
+          email: email.toLowerCase(),
+          token_hash: digest,
+          expires_at: expiresAt,
+        },
+        { onConflict: "token_hash", ignoreDuplicates: true },
+      ),
     );
   }
   async invitations() {
@@ -285,6 +325,59 @@ export class SupabaseRepository implements Repository {
           .select("id,email,expires_at,used_by,created_at")
           .order("created_at", { ascending: false }),
       ) || []
+    );
+  }
+  async pendingInvitation(email: string) {
+    const rows = this.check(
+      await this.client
+        .from("invitations")
+        .select("token_hash")
+        .eq("email", email.toLowerCase())
+        .is("used_by", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1),
+    );
+    return rows?.[0]?.token_hash || null;
+  }
+  async addBetaRequest(email: string) {
+    this.check(
+      await this.client
+        .from("beta_requests")
+        .upsert(
+          { email: email.toLowerCase() },
+          { onConflict: "email", ignoreDuplicates: true },
+        ),
+    );
+  }
+  async betaRequests(): Promise<BetaRequest[]> {
+    const rows = this.check(
+      await this.client
+        .from("beta_requests")
+        .select("*")
+        .order("created_at", { ascending: false }),
+    );
+    return (rows || []).map((row) => ({
+      email: row.email,
+      createdAt: row.created_at,
+      approvedAt: row.approved_at || undefined,
+      approvedBy: row.approved_by || undefined,
+      sentAt: row.sent_at || undefined,
+      invitationBox: row.invitation_box || undefined,
+      expiresAt: row.expires_at || undefined,
+    }));
+  }
+  async saveBetaRequest(request: BetaRequest) {
+    this.check(
+      await this.client.from("beta_requests").upsert({
+        email: request.email,
+        created_at: request.createdAt,
+        approved_at: request.approvedAt || null,
+        approved_by: request.approvedBy || null,
+        sent_at: request.sentAt || null,
+        invitation_box: request.invitationBox || null,
+        expires_at: request.expiresAt || null,
+      }),
     );
   }
   async items(ownerId: string, kind?: string) {

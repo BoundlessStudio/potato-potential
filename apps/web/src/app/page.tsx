@@ -57,6 +57,7 @@ import { Brand, Companion } from "@/components/companion";
 import { Computer } from "@/components/computer";
 import { PhoneField } from "@/components/phone-field";
 import { FeatureOverview } from "@/components/feature-overview";
+import { PublicEntry } from "@/components/public-entry";
 import {
   Apps,
   Markdown,
@@ -85,6 +86,7 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [agent, setAgent] = useState<PublicAgent | null>(null);
   const [operator, setOperator] = useState(false);
+  const [accountEmail, setAccountEmail] = useState("");
   const [tab, setTab] = useState<Tab>("chat");
   const [mobileNav, setMobileNav] = useState(false);
   const [items, setItems] = useState<WorkspaceItem[]>([]);
@@ -135,12 +137,17 @@ export default function Home() {
       }
       let data = await api("/me");
       const invitation = localStorage.getItem("boundless-invite");
-      if (invitation && !data.profile) {
-        await api("/invitations/accept", "POST", { invitation });
+      if ((invitation || data.invited) && !data.profile) {
+        await api(
+          "/invitations/accept",
+          "POST",
+          invitation ? { invitation } : {},
+        );
         localStorage.removeItem("boundless-invite");
         data = await api("/me");
       }
       setSignedIn(true);
+      setAccountEmail(data.email || "");
       setProfile(data.profile);
       setAgent(data.agent);
       setOperator(data.operator);
@@ -189,8 +196,10 @@ export default function Home() {
     const invitation = url.searchParams.get("invite");
     if (invitation) {
       localStorage.setItem("boundless-invite", invitation);
-      url.searchParams.delete("invite");
-      window.history.replaceState({}, "", url.pathname + url.search);
+      window.location.replace(
+        `/signin?invite=${encodeURIComponent(invitation)}`,
+      );
+      return;
     }
     if (url.searchParams.has("auth_error"))
       onError("That sign-in link could not be used. Request a fresh one.");
@@ -418,10 +427,12 @@ export default function Home() {
   if (!signedIn)
     return (
       <>
-        <Welcome onError={onError} onReady={() => void loadAccount()} />
+        <PublicEntry />
         {toast && <Toast toast={toast} close={() => setToast(null)} />}
       </>
     );
+  if (!profile && !operator && !demo)
+    return <PublicEntry pendingEmail={accountEmail} />;
   if (!agent)
     return (
       <>
@@ -1183,111 +1194,6 @@ function Toast({
         <X size={15} />
       </button>
     </div>
-  );
-}
-function Welcome({
-  onError,
-  onReady,
-}: {
-  onError: (message: string) => void;
-  onReady: () => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [sent, setSent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    try {
-      if (demo) {
-        onReady();
-        return;
-      }
-      const { error } = await supabase().auth.signInWithOtp({
-        email,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-      setSent(true);
-    } catch (error) {
-      onError(err(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-  return (
-    <main className="welcome-page">
-      <div className="welcome-brand">
-        <Brand />
-      </div>
-      <section className="welcome-story">
-        <span className="welcome-eyebrow">
-          <Sparkles size={14} />
-          YOUR OWN LITTLE POSSIBILITY
-        </span>
-        <h1>
-          A little help.
-          <br />A lot of <span>possibility.</span>
-        </h1>
-        <p>
-          A companion with a computer of their own.
-          <br />
-          Curious about your world. Ready to make room in it.
-        </p>
-        <Companion size={370} scene />
-        <div className="welcome-promises">
-          <span>
-            <Heart size={16} />
-            In your corner
-          </span>
-          <span>
-            <Clock3 size={16} />
-            Here between chats
-          </span>
-          <span>
-            <Sparkles size={16} />
-            Ready to get to work
-          </span>
-        </div>
-      </section>
-      <section className="welcome-signin">
-        <span className="eyebrow">A LITTLE TEAM OF TWO</span>
-        <h2>Make yourself at home.</h2>
-        <p>Sign in with your invitation email to meet your companion.</p>
-        <form onSubmit={submit} className="stack">
-          <label>
-            Email address
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
-              placeholder="you@example.com"
-            />
-          </label>
-          <button className="button button-primary" disabled={busy}>
-            {busy ? <Loader2 size={16} /> : <ArrowRight size={16} />}Send a
-            sign-in link
-          </button>
-        </form>
-        {sent && (
-          <p className="signin-confirmation">
-            <CheckCircle2 size={17} />A little hello is waiting in your inbox.
-            Follow the link to come back.
-          </p>
-        )}
-        <div className="invite-note">
-          <ShieldCheck size={18} />
-          <span>
-            An invite-only beta.
-            <br />A little space to build something good together.
-          </span>
-        </div>
-      </section>
-      <span className="welcome-footer">
-        boundless · good things happen together
-      </span>
-    </main>
   );
 }
 function Onboarding({

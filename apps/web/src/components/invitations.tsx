@@ -1,13 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { Loader2, Mail, RefreshCw } from "lucide-react";
+import { Check, Loader2, Mail, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/lib/client";
 
-type Invitation = {
+type Applicant = {
   email: string;
-  status: "accepted" | "pending" | "expired";
+  status: "awaiting_review" | "approved" | "accepted" | "pending" | "expired";
   accountExists: boolean;
+  requestedAt?: string;
+};
+const labels = {
+  awaiting_review: "Awaiting review",
+  approved: "Approved · send needed",
+  accepted: "Accepted",
+  pending: "Invited",
+  expired: "Invite expired",
 };
 
 export function Invitations({
@@ -17,24 +25,23 @@ export function Invitations({
   onError: (message: string) => void;
   onSuccess: (message: string) => void;
 }) {
-  const [invitations, setInvitations] = useState<Invitation[] | null>(null);
+  const [people, setPeople] = useState<Applicant[] | null>(null);
   const [email, setEmail] = useState("");
-  const [sending, setSending] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState("");
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api<{ invitations: Invitation[] }>(
+      const data = await api<{ invitations: Applicant[] }>(
         "/operator/invitations",
       );
-      setInvitations(data.invitations);
+      setPeople(data.invitations);
       setLoadError("");
     } catch (error) {
       setLoadError(
-        error instanceof Error
-          ? error.message
-          : "Couldn’t load your invitations.",
+        error instanceof Error ? error.message : "Couldn’t load the beta list.",
       );
     } finally {
       setLoading(false);
@@ -43,24 +50,39 @@ export function Invitations({
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function send(event: FormEvent) {
+  async function add(event: FormEvent) {
     event.preventDefault();
+    if (adding) return;
+    setAdding(true);
+    try {
+      await api("/operator/beta", "POST", { email: email.trim() });
+      setEmail("");
+      onSuccess(
+        "Email added for review. Approve it below to send an invitation.",
+      );
+      await load();
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Couldn’t add this email.",
+      );
+    } finally {
+      setAdding(false);
+    }
+  }
+  async function approve(person: Applicant) {
     if (sending) return;
-    setSending(true);
+    setSending(person.email);
     try {
       const result = await api<{ email: string; demo: boolean }>(
         "/operator/invitations/send",
         "POST",
-        { email: email.trim() },
+        { email: person.email },
       );
-      setEmail("");
       onSuccess(
         result.demo
           ? `Preview invitation created for ${result.email}.`
           : `Invitation sent to ${result.email}.`,
       );
-      await load();
     } catch (error) {
       onError(
         error instanceof Error
@@ -68,59 +90,75 @@ export function Invitations({
           : "Couldn’t send this invitation.",
       );
     } finally {
-      setSending(false);
+      await load();
+      setSending(null);
     }
   }
-
   return (
     <div className="invitations-page">
       <div className="page-heading">
         <div>
           <span className="eyebrow">A little room for more people</span>
-          <h1>Beta invitations.</h1>
-          <p>Invite someone and see whether they’ve joined.</p>
+          <h1>Beta list.</h1>
+          <p>
+            Review requests, approve the people you’re ready to invite, and see
+            who has joined.
+          </p>
         </div>
       </div>
       <section className="settings-card">
-        <h2>Send a new invitation</h2>
-        <form onSubmit={send} className="invite-form">
+        <h2>Add someone to the list</h2>
+        <form onSubmit={add} className="invite-form">
           <label>
             Email address
             <input
               type="email"
               autoComplete="email"
               required
+              maxLength={254}
               value={email}
-              disabled={sending}
+              disabled={adding}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="someone@example.com"
             />
           </label>
           <button
             className="button button-primary"
-            disabled={sending || !email.trim()}
+            disabled={adding || !email.trim()}
           >
-            {sending ? (
+            {adding ? (
               <Loader2 size={16} className="spin" />
             ) : (
-              <Mail size={16} />
+              <Plus size={16} />
             )}
-            {sending ? "Sending…" : "Send invitation"}
+            {adding ? "Adding…" : "Add email"}
           </button>
         </form>
         <p className="fine-print">
-          We’ll email an invitation to this address. Invitations expire after
-          seven days.
+          Adding an email saves it for review. An invitation is sent only when
+          you approve it below.
         </p>
       </section>
       <div className="section-heading">
-        <h2>Invited users</h2>
+        <h2>
+          Requests & invitations
+          {people && (
+            <span className="beta-review-count">
+              {
+                people.filter((person) => person.status === "awaiting_review")
+                  .length
+              }{" "}
+              awaiting review
+            </span>
+          )}
+        </h2>
         <button
           className="text-button"
           disabled={loading}
           onClick={() => void load()}
         >
-          <RefreshCw size={15} className={loading ? "spin" : ""} /> Refresh
+          <RefreshCw size={15} className={loading ? "spin" : ""} />
+          Refresh
         </button>
       </div>
       {loadError && (
@@ -128,46 +166,84 @@ export function Invitations({
           {loadError}
         </p>
       )}
-      {invitations === null ? (
+      {people === null ? (
         !loadError && (
           <p className="fine-print" role="status">
-            Loading invitations…
+            Loading the beta list…
           </p>
         )
-      ) : invitations.length === 0 ? (
+      ) : people.length === 0 ? (
         <div className="settings-card invitation-empty">
-          <p>No invitations yet. Send your first one above.</p>
+          <p>
+            No requests yet. People can join from the home page, or you can add
+            an email above.
+          </p>
         </div>
       ) : (
         <div className="invitation-table-wrap">
           <table className="invitation-table">
             <caption className="sr-only">
-              Invited users and their invitation and account status
+              Beta requests, approvals, invitation acceptance, and account
+              status
             </caption>
             <thead>
               <tr>
                 <th scope="col">Email address</th>
-                <th scope="col">Invitation</th>
+                <th scope="col">Requested</th>
+                <th scope="col">Status</th>
                 <th scope="col">User account</th>
+                <th scope="col">Review</th>
               </tr>
             </thead>
             <tbody>
-              {invitations.map((invitation) => (
-                <tr key={invitation.email}>
-                  <td data-label="Email address">{invitation.email}</td>
-                  <td data-label="Invitation">
+              {people.map((person) => (
+                <tr key={person.email}>
+                  <td data-label="Email address">{person.email}</td>
+                  <td data-label="Requested">
+                    {person.requestedAt
+                      ? new Date(person.requestedAt).toLocaleDateString()
+                      : "—"}
+                  </td>
+                  <td data-label="Status">
                     <span
-                      className={`status-tag ${invitation.status === "accepted" ? "completed" : "needs_you"}`}
+                      className={`status-tag ${person.status === "accepted" ? "completed" : "needs_you"}`}
                     >
-                      {invitation.status === "accepted"
-                        ? "Accepted"
-                        : invitation.status === "expired"
-                          ? "Expired"
-                          : "Pending"}
+                      {labels[person.status]}
                     </span>
                   </td>
                   <td data-label="User account">
-                    {invitation.accountExists ? "Created" : "Not created"}
+                    {person.accountExists ? "Created" : "Not created"}
+                  </td>
+                  <td data-label="Review">
+                    {["awaiting_review", "approved", "expired"].includes(
+                      person.status,
+                    ) ? (
+                      <button
+                        className="button button-primary beta-approve"
+                        disabled={Boolean(sending)}
+                        onClick={() => void approve(person)}
+                        aria-label={`${person.status === "awaiting_review" ? "Approve and invite" : "Send invitation to"} ${person.email}`}
+                      >
+                        {sending === person.email ? (
+                          <Loader2 size={14} className="spin" />
+                        ) : person.status === "awaiting_review" ? (
+                          <Check size={14} />
+                        ) : (
+                          <Mail size={14} />
+                        )}
+                        {sending === person.email
+                          ? "Sending…"
+                          : person.status === "awaiting_review"
+                            ? "Approve & invite"
+                            : person.status === "approved"
+                              ? "Retry invitation"
+                              : "Send new invitation"}
+                      </button>
+                    ) : person.status === "accepted" ? (
+                      "Joined"
+                    ) : (
+                      "Waiting for acceptance"
+                    )}
                   </td>
                 </tr>
               ))}

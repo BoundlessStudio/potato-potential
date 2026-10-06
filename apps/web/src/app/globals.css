@@ -2367,6 +2367,62 @@ label small {
   top: 38px;
   left: 50px;
 }
+.welcome-navigation {
+  position: absolute;
+  top: 38px;
+  right: 40px;
+}
+.entry-signin-link {
+  margin-top: 24px;
+}
+.entry-signin-link a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--purple);
+  font-weight: 600;
+}
+.entry-retry {
+  margin-top: 16px;
+}
+.beta-honeypot {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.beta-review-count {
+  margin-left: 12px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--muted);
+}
+.beta-approve {
+  padding: 9px 12px;
+  font-size: 11px;
+}
+@media (max-width: 760px) {
+  .welcome-navigation {
+    top: 25px;
+    right: 20px;
+  }
+  .welcome-navigation .button {
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  .welcome-brand .brand {
+    font-size: 21px;
+  }
+  .welcome-brand .brand-mark {
+    width: 29px;
+    height: 29px;
+  }
+  .beta-review-count {
+    display: block;
+    margin: 5px 0 0;
+  }
+}
 .welcome-story {
   padding: 145px 55px 70px;
   display: flex;

@@ -35,7 +35,7 @@ test("keeps the operator entry hidden throughout onboarding and provisioning", a
   await expect(page.getByText("Beta operator", { exact: true })).toHaveCount(0);
 });
 
-test("operator can create invitations on the standalone page before agent setup completes", async ({
+test("operator reviews beta requests and approves sending separately from adding emails", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -43,106 +43,94 @@ test("operator can create invitations on the standalone page before agent setup 
   await page.route("**/api/me", (route) =>
     route.fulfill({ json: { operator: true, profile: null, agent: null } }),
   );
-  const invitations = [
+  const people = [
     { email: "joined@example.com", status: "accepted", accountExists: true },
-    { email: "waiting@example.com", status: "pending", accountExists: false },
-    { email: "signed-up@example.com", status: "pending", accountExists: true },
+    {
+      email: "waiting@example.com",
+      status: "awaiting_review",
+      accountExists: false,
+    },
+    { email: "invited@example.com", status: "pending", accountExists: false },
     { email: "former@example.com", status: "accepted", accountExists: false },
     { email: "expired@example.com", status: "expired", accountExists: false },
   ];
   await page.route("**/api/operator/invitations", (route) =>
-    route.fulfill({ json: { invitations } }),
+    route.fulfill({ json: { invitations: people } }),
   );
-  let submitted: { email: string } | undefined;
-  await page.route("**/api/operator/invitations/send", (route) => {
-    submitted = route.request().postDataJSON();
-    invitations.push({
-      email: submitted!.email,
-      status: "pending",
+  let added: { email: string } | undefined, sent: { email: string } | undefined;
+  await page.route("**/api/operator/beta", (route) => {
+    added = route.request().postDataJSON();
+    people.push({
+      email: added!.email,
+      status: "awaiting_review",
       accountExists: false,
     });
+    return route.fulfill({ status: 201, json: added });
+  });
+  await page.route("**/api/operator/invitations/send", (route) => {
+    sent = route.request().postDataJSON();
+    people.find((person) => person.email === sent!.email)!.status = "pending";
     return route.fulfill({
       status: 201,
-      json: {
-        email: submitted!.email,
-        sent: true,
-        demo: false,
-      },
+      json: { ...sent, sent: true, demo: false },
     });
   });
   await page.goto("/operator/invitations");
+  await expect(
+    page.getByRole("heading", { name: "Beta list.", exact: true }),
+  ).toBeVisible();
   await page
     .getByLabel("Email address", { exact: true })
     .fill("friend@example.com");
-  await page.getByRole("button", { name: "Send invitation" }).click();
-  await expect(page.getByRole("status")).toHaveText(
+  await page.getByRole("button", { name: "Add email", exact: true }).click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "friend@example.com" }),
+  ).toContainText("Awaiting review");
+  expect(added).toEqual({ email: "friend@example.com" });
+  expect(sent).toBeUndefined();
+  await page
+    .getByRole("button", {
+      name: "Approve and invite friend@example.com",
+      exact: true,
+    })
+    .click();
+  await expect(page.locator('.toast[role="status"]')).toHaveText(
     "Invitation sent to friend@example.com.",
   );
   await expect(
-    page.getByText("friend@example.com", { exact: true }),
-  ).toBeVisible();
-  const joined = page
-    .getByRole("row")
-    .filter({ hasText: "joined@example.com" });
+    page.getByRole("row").filter({ hasText: "friend@example.com" }),
+  ).toContainText("Invited");
+  expect(sent).toEqual({ email: "friend@example.com" });
   await expect(
-    joined.getByRole("cell", { name: "Accepted", exact: true }),
-  ).toBeVisible();
+    page.getByRole("row").filter({ hasText: "joined@example.com" }),
+  ).toContainText("Created");
   await expect(
-    joined.getByRole("cell", { name: "Created", exact: true }),
-  ).toBeVisible();
-  const waiting = page
-    .getByRole("row")
-    .filter({ hasText: "waiting@example.com" });
-  await expect(
-    waiting.getByRole("cell", { name: "Pending", exact: true }),
-  ).toBeVisible();
-  await expect(
-    waiting.getByRole("cell", { name: "Not created", exact: true }),
-  ).toBeVisible();
-  const former = page
-    .getByRole("row")
-    .filter({ hasText: "former@example.com" });
-  await expect(
-    former.getByRole("cell", { name: "Accepted", exact: true }),
-  ).toBeVisible();
-  await expect(
-    former.getByRole("cell", { name: "Not created", exact: true }),
-  ).toBeVisible();
+    page.getByRole("row").filter({ hasText: "former@example.com" }),
+  ).toContainText("Not created");
   await expect(page.getByRole("button", { name: "Suspend" })).toHaveCount(0);
-  await expect(
-    page.getByRole("button", { name: "Health & usage" }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText("Your beta companions", { exact: true }),
-  ).toHaveCount(0);
-  expect(submitted).toEqual({ email: "friend@example.com" });
-  await expect(
-    page.getByRole("link", { name: "Back to companion" }),
-  ).toHaveAttribute("href", "/");
   await page.screenshot({
-    path: ".cache/operator-invitations-desktop.png",
+    path: ".cache/beta-review-desktop.png",
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
+      () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
   await page.screenshot({
-    path: ".cache/operator-invitations-mobile.png",
+    path: ".cache/beta-review-mobile.png",
     fullPage: true,
   });
   expect(errors).toEqual([]);
 });
 
-test("regular customers cannot access the standalone invitation controls", async ({
+test("regular customers cannot access beta review controls", async ({
   page,
 }) => {
-  let operatorRequests = 0;
+  let requests = 0;
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname.startsWith("/api/operator"))
-      operatorRequests++;
+    if (new URL(request.url()).pathname.startsWith("/api/operator")) requests++;
   });
   await page.route("**/api/me", (route) =>
     route.fulfill({ json: { operator: false } }),
@@ -151,13 +139,11 @@ test("regular customers cannot access the standalone invitation controls", async
   await expect(
     page.getByRole("heading", { name: "Operator access only." }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Send invitation" }),
-  ).toHaveCount(0);
-  expect(operatorRequests).toBe(0);
+  await expect(page.getByRole("button", { name: "Add email" })).toHaveCount(0);
+  expect(requests).toBe(0);
 });
 
-test("signed-out visitors must sign in before accessing invitation controls", async ({
+test("signed-out visitors reach the dedicated sign-in page from operator access", async ({
   page,
 }) => {
   await page.route("**/api/me", (route) =>
@@ -172,13 +158,11 @@ test("signed-out visitors must sign in before accessing invitation controls", as
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Sign in", exact: true }),
-  ).toHaveAttribute("href", "/");
-  await expect(
-    page.getByRole("button", { name: "Send invitation" }),
-  ).toHaveCount(0);
+  ).toHaveAttribute("href", "/signin");
+  await expect(page.getByRole("button", { name: "Add email" })).toHaveCount(0);
 });
 
-test("completed operator setup exposes a link to the standalone invitation page", async ({
+test("completed operator setup exposes a link to the beta list", async ({
   page,
 }) => {
   await page.route("**/api/me", async (route) => {
@@ -194,14 +178,20 @@ test("completed operator setup exposes a link to the standalone invitation page"
     page.getByRole("link", { name: "Beta operator" }),
   ).toHaveAttribute("href", "/operator/invitations");
 });
-test("email failure preserves the address for retry and never reports success", async ({
+
+test("failed invitation delivery retains approval and exposes a retry without reporting success", async ({
   page,
 }) => {
   await page.route("**/api/me", (route) =>
     route.fulfill({ json: { operator: true } }),
   );
+  const person = {
+    email: "retry@example.com",
+    status: "awaiting_review",
+    accountExists: false,
+  };
   await page.route("**/api/operator/invitations", (route) =>
-    route.fulfill({ json: { invitations: [] } }),
+    route.fulfill({ json: { invitations: [person] } }),
   );
   let release!: () => void,
     sends = 0;
@@ -211,6 +201,7 @@ test("email failure preserves the address for retry and never reports success", 
   await page.route("**/api/operator/invitations/send", async (route) => {
     sends++;
     await waiting;
+    person.status = "approved";
     await route.fulfill({
       status: 502,
       json: {
@@ -224,20 +215,27 @@ test("email failure preserves the address for retry and never reports success", 
   });
   await page.goto("/operator/invitations");
   await page
-    .getByLabel("Email address", { exact: true })
-    .fill("retry@example.com");
-  await page.getByRole("button", { name: "Send invitation" }).click();
-  await expect(page.getByRole("button", { name: "Sending…" })).toBeDisabled();
+    .getByRole("button", {
+      name: "Approve and invite retry@example.com",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("button", {
+      name: "Approve and invite retry@example.com",
+      exact: true,
+    }),
+  ).toBeDisabled();
   expect(sends).toBe(1);
   release();
   await expect(page.locator('.toast[role="alert"]')).toContainText(
     "Couldn’t confirm sending",
   );
-  await expect(page.getByLabel("Email address", { exact: true })).toHaveValue(
-    "retry@example.com",
-  );
   await expect(
-    page.getByRole("button", { name: "Send invitation" }),
-  ).toBeEnabled();
+    page.getByRole("button", {
+      name: "Send invitation to retry@example.com",
+      exact: true,
+    }),
+  ).toHaveText("Retry invitation");
   await expect(page.getByText(/Invitation sent to/)).toHaveCount(0);
 });

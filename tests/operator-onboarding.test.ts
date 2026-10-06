@@ -337,3 +337,102 @@ it("retains the invitation and returns a failure when email sending cannot be co
   });
   expect(await repo.invitations()).toHaveLength(1);
 });
+it("public beta signup normalizes and deduplicates emails without granting access or sending mail", async () => {
+  for (const email of [`  ${customerEmail.toUpperCase()} `, customerEmail]) {
+    const response = await call("/beta", "", { email });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ saved: true });
+  }
+  expect(await repo.betaRequests()).toEqual([
+    expect.objectContaining({ email: customerEmail }),
+  ]);
+  expect(await repo.invitations()).toHaveLength(0);
+  expect(await repo.customers()).toHaveLength(0);
+  expect(queue.send).not.toHaveBeenCalled();
+  expect(invitationEmail).not.toHaveBeenCalled();
+  expect(
+    (await call("/invitations/accept", "verified-customer", {})).status,
+  ).toBe(403);
+  expect((await call("/onboarding", "verified-customer", input)).status).toBe(
+    403,
+  );
+  expect((await call("/beta", "", { email: "invalid" })).status).toBe(400);
+  await call("/beta", "", { email: "bot@example.com", website: "spam" });
+  expect(await repo.betaRequests()).toHaveLength(1);
+});
+it("only the operator reviews requests and adding an email never sends an invitation", async () => {
+  expect(
+    (
+      await call("/operator/beta", "verified-customer", {
+        email: customerEmail,
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (await call("/operator/beta", "verified-owner", { email: customerEmail }))
+      .status,
+  ).toBe(201);
+  const data = await (
+    await call("/operator/invitations", "verified-owner")
+  ).json();
+  expect(data.invitations).toEqual([
+    expect.objectContaining({
+      email: customerEmail,
+      status: "awaiting_review",
+    }),
+  ]);
+  expect(invitationEmail).not.toHaveBeenCalled();
+});
+it("approval retries reuse the registered invitation and verified invitees can accept from the sign-in page", async () => {
+  await call("/beta", "", { email: customerEmail });
+  invitationEmail.mockRejectedValueOnce(
+    new HttpError(502, "invitation_email_failed", "Interrupted"),
+  );
+  expect(
+    (
+      await call("/operator/invitations/send", "verified-owner", {
+        email: customerEmail,
+      })
+    ).status,
+  ).toBe(502);
+  let list = await (
+    await call("/operator/invitations", "verified-owner")
+  ).json();
+  expect(list.invitations[0]).toMatchObject({ status: "approved" });
+  expect(JSON.stringify(list)).not.toMatch(/invitationBox|token_hash/);
+  expect(
+    (
+      await call("/operator/invitations/send", "verified-owner", {
+        email: customerEmail,
+      })
+    ).status,
+  ).toBe(201);
+  expect(invitationEmail.mock.calls[0][0]).toEqual(
+    invitationEmail.mock.calls[1][0],
+  );
+  expect(new URL(invitationEmail.mock.calls[1][0].url).pathname).toBe(
+    "/signin",
+  );
+  expect(await repo.invitations()).toHaveLength(1);
+  await call("/operator/invitations/send", "verified-owner", {
+    email: customerEmail,
+  });
+  expect(invitationEmail).toHaveBeenCalledTimes(2);
+  expect((await (await call("/me", "verified-customer")).json()).invited).toBe(
+    true,
+  );
+  expect(
+    (await call("/invitations/accept", "unverified-owner", {})).status,
+  ).toBe(401);
+  expect((await call("/invitations/accept", "verified-owner", {})).status).toBe(
+    403,
+  );
+  expect(
+    (await call("/invitations/accept", "verified-customer", {})).status,
+  ).toBe(200);
+  list = await (await call("/operator/invitations", "verified-owner")).json();
+  expect(list.invitations[0]).toMatchObject({
+    status: "accepted",
+    accountExists: true,
+  });
+});

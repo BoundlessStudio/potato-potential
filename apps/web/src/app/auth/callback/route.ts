@@ -26,5 +26,5 @@ export async function GET(request: Request) {
     const { error } = await client.auth.exchangeCodeForSession(code);
     if (!error) return NextResponse.redirect(new URL("/", request.url));
   }
-  return NextResponse.redirect(new URL("/?auth_error=1", request.url));
+  return NextResponse.redirect(new URL("/signin?auth_error=1", request.url));
 }

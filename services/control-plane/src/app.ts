@@ -23,7 +23,7 @@ import type { Repository } from "./repository";
 import type { AgentProvider, InkboxProvider } from "./providers";
 import { Lifecycle } from "./lifecycle";
 import { DEMO_EMAIL, DEMO_NEW_USER, DEMO_USER } from "./demo";
-import { HttpError, hash, matchesHash, token } from "./security";
+import { HttpError, hash, matchesHash, token, seal, unseal } from "./security";
 import { boundedSse } from "./streams";
 import { computerBusy, screenForTemplate } from "./computer-maintenance";
 import {
@@ -56,6 +56,11 @@ const uuid = z.uuid();
 const remoteId = z.string().regex(/^[a-f0-9]{32}$/);
 const cronId = z.string().regex(/^[a-f0-9]{12}$/);
 const date = () => new Date().toISOString();
+const emailSchema = z.string().trim().toLowerCase().max(254).pipe(z.email());
+const betaLease = (email: string) => {
+  const value = hash(`beta:${email}`);
+  return `${value.slice(0, 8)}-${value.slice(8, 12)}-4${value.slice(13, 16)}-8${value.slice(17, 20)}-${value.slice(20, 32)}`;
+};
 
 export async function reconcile(dep: Dependencies, ownerId: string) {
   return dep.repo.locked(ownerId, () => reconcileLocked(dep, ownerId));
@@ -263,6 +268,31 @@ export function createApp(dep: Dependencies) {
     res.json({ item });
   });
 
+  app.post(
+    "/api/beta",
+    rateLimit({
+      windowMs: 60 * 60_000,
+      limit: config.demo ? 1000 : 12,
+      standardHeaders: "draft-8",
+      legacyHeaders: false,
+      message: {
+        error: {
+          code: "rate_limited",
+          message: "Please try joining the beta list again later.",
+        },
+      },
+    }),
+    async (req, res) => {
+      const { email, website } = z
+        .object({ email: emailSchema, website: z.string().max(500).optional() })
+        .parse(req.body);
+      if (!website) await repo.addBetaRequest(email);
+      // Same response for a new request or an email already on the list.
+      // Signup never creates an invitation, an Auth account, or a provider instance.
+      res.status(202).json({ saved: true });
+    },
+  );
+
   const authClient = config.demo
     ? null
     : createClient(config.supabaseUrl, config.supabaseKey, {
@@ -351,18 +381,25 @@ export function createApp(dep: Dependencies) {
       agent: agent ? publicAgent(agent, challenge) : null,
       email: actor(req).email,
       operator: actor(req).operator,
+      invited:
+        !profile && Boolean(await repo.pendingInvitation(actor(req).email)),
       demo: config.demo,
     });
   });
   app.post("/api/invitations/accept", async (req, res) => {
     const { invitation } = z
-      .object({ invitation: z.string().min(16).max(200) })
+      .object({ invitation: z.string().min(16).max(200).optional() })
       .parse(req.body);
-    await repo.claimInvitation(
-      actor(req).id,
-      actor(req).email,
-      hash(invitation),
-    );
+    const digest = invitation
+      ? hash(invitation)
+      : await repo.pendingInvitation(actor(req).email);
+    if (!digest)
+      throw new HttpError(
+        403,
+        "invitation_required",
+        "Your beta request is waiting for approval. Sign in after you receive an invitation.",
+      );
+    await repo.claimInvitation(actor(req).id, actor(req).email, digest);
     if (!(await repo.profile(actor(req).id)))
       await repo.saveProfile({
         id: actor(req).id,
@@ -994,9 +1031,10 @@ export function createApp(dep: Dependencies) {
   app.get("/api/operator/invitations", async (req, res) => {
     operator(req);
     const invitations = await repo.invitations();
+    const betaRequests = await repo.betaRequests();
     const accountEmails = new Set<string>(),
       accountIds = new Set<string>();
-    if (invitations.length) {
+    if (invitations.length || betaRequests.length) {
       if (config.demo) {
         for (const profile of await repo.customers()) {
           accountEmails.add(profile.email.toLowerCase());
@@ -1051,34 +1089,79 @@ export function createApp(dep: Dependencies) {
       });
     }
     res.json({
-      invitations: [...people.values()].map((person) => ({
-        ...person,
-        status: person.accepted
-          ? "accepted"
-          : Date.parse(person.expiresAt) <= Date.now()
-            ? "expired"
-            : "pending",
-      })),
+      invitations: [
+        ...new Set([...betaRequests.map((row) => row.email), ...people.keys()]),
+      ].map((email) => {
+        const person = people.get(email),
+          request = betaRequests.find((row) => row.email === email);
+        return {
+          email,
+          accountExists: person?.accountExists || accountEmails.has(email),
+          requestedAt: request?.createdAt,
+          approvedAt: request?.approvedAt,
+          sentAt: request?.sentAt,
+          status: person?.accepted
+            ? "accepted"
+            : request?.approvedAt && !request.sentAt
+              ? "approved"
+              : !person
+                ? "awaiting_review"
+                : Date.parse(person.expiresAt) <= Date.now()
+                  ? "expired"
+                  : "pending",
+        };
+      }),
     });
+  });
+  app.post("/api/operator/beta", async (req, res) => {
+    operator(req);
+    const { email } = z.object({ email: emailSchema }).parse(req.body);
+    await repo.addBetaRequest(email);
+    res.status(201).json({ email });
   });
   app.post("/api/operator/invitations/send", async (req, res) => {
     operator(req);
-    const { email } = z
-      .object({ email: z.string().trim().toLowerCase().pipe(z.email()) })
-      .parse(req.body);
+    const { email } = z.object({ email: emailSchema }).parse(req.body);
     requireInvitationEmail(config);
-    const invitation = token(),
-      digest = hash(invitation);
-    const url = `${config.webOrigin}/?invite=${invitation}`;
-    // Register access before sending; an email must never contain an unusable link.
-    await repo.createInvitation(
-      email,
-      digest,
-      new Date(Date.now() + 7 * 86400000).toISOString(),
-    );
-    await (
-      dep.invitationEmail || ((input) => sendInvitationEmail(config, input))
-    )({ email, url, digest });
+    await repo.locked(betaLease(email), async () => {
+      await repo.addBetaRequest(email);
+      const request = (await repo.betaRequests()).find(
+        (row) => row.email === email,
+      )!;
+      const previous = (await repo.invitations()).filter(
+        (row) => row.email === email,
+      );
+      if (previous.some((row) => row.used_by || row.usedBy))
+        throw new HttpError(
+          409,
+          "invitation_accepted",
+          "This email has already accepted an invitation. They can use the sign-in page.",
+        );
+      if (request.sentAt && Date.parse(request.expiresAt || "") > Date.now())
+        return;
+      request.approvedAt ||= date();
+      request.approvedBy ||= actor(req).id;
+      const key = config.demo ? "a".repeat(64) : config.encryptionKey;
+      if (
+        !request.invitationBox ||
+        Date.parse(request.expiresAt || "") <= Date.now()
+      ) {
+        request.invitationBox = seal(token(), key);
+        request.expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+        request.sentAt = undefined;
+      }
+      // Persist approval and the retry credential before any delivery.
+      await repo.saveBetaRequest(request);
+      const invitation = unseal(request.invitationBox, key),
+        digest = hash(invitation);
+      await repo.createInvitation(email, digest, request.expiresAt!);
+      const url = `${config.webOrigin}/signin?invite=${invitation}&email=${encodeURIComponent(email)}`;
+      await (
+        dep.invitationEmail || ((input) => sendInvitationEmail(config, input))
+      )({ email, url, digest });
+      request.sentAt = date();
+      await repo.saveBetaRequest(request);
+    });
     res.status(201).json({ email, sent: !config.demo, demo: config.demo });
   });
   app.post("/api/operator/:ownerId/retry", async (req, res) => {

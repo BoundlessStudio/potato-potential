@@ -19,11 +19,39 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
+    await readFile(
+      "supabase/migrations/202610050003_beta_requests.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
     `insert into auth.users values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
   );
 });
 afterAll(async () => {
   await db.close();
+});
+it("keeps the beta review list and approval credentials private from applicants and customers", async () => {
+  await db.exec(
+    "insert into public.beta_requests(email) values ('waiting@example.com'); set role anon;",
+  );
+  await expect(db.query("select * from public.beta_requests")).rejects.toThrow(
+    "permission denied",
+  );
+  await expect(
+    db.query(
+      "insert into public.beta_requests(email) values ('self@example.com')",
+    ),
+  ).rejects.toThrow("permission denied");
+  await db.exec("reset role; set role authenticated;");
+  await expect(
+    db.query("update public.beta_requests set approved_at=now()"),
+  ).rejects.toThrow("permission denied");
+  await db.exec("reset role; set role service_role;");
+  expect(
+    (await db.query("select * from public.beta_requests")).rows,
+  ).toHaveLength(1);
+  await db.exec("reset role;");
 });
 it("executes the full migration and isolates customer reads with real Postgres RLS", async () => {
   await db.exec(`set role authenticated; set request.jwt.claim.sub='${a}';`);

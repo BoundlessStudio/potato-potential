@@ -96,7 +96,7 @@ export function OperatorWorkspace({
               Try again
             </button>
           ) : (
-            <Link href="/" className="button button-primary">
+            <Link href={access === "signed-out" ? "/signin" : "/"} className="button button-primary">
               {access === "signed-out" ? "Sign in" : "Back to companion"}
             </Link>
           )}

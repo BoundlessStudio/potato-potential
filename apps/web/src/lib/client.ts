@@ -17,9 +17,34 @@ export function supabase() {
   return client;
 }
 export async function credential() {
-  if (demo) return localStorage.getItem("boundless-demo-user") || "demo";
+  if (demo) {
+    const value = localStorage.getItem("boundless-demo-user");
+    return value === "signed-out" ? "" : value || "demo";
+  }
   const { data } = await supabase().auth.getSession();
   return data.session?.access_token || "";
+}
+export async function joinBeta(email: string, website = "") {
+  const response = await fetch(`${base}/api/beta`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, website }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      body.error?.message ||
+        "Couldn’t save your beta request. Please try again.",
+    );
+  }
+}
+export async function sendSignInLink(email: string) {
+  if (demo) return;
+  const { error } = await supabase().auth.signInWithOtp({
+    email: email.trim().toLowerCase(),
+    options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+  });
+  if (error) throw error;
 }
 export class ApiError extends Error {
   constructor(
