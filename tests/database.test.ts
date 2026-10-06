@@ -7,7 +7,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(
-    `create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users(id uuid primary key); create function auth.uid() returns uuid language sql as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated; create publication supabase_realtime;`,
+    `create role anon; create role authenticated; create role service_role bypassrls; create schema auth; create table auth.users(id uuid primary key, email text); create function auth.uid() returns uuid language sql as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$; grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated; create publication supabase_realtime;`,
   );
   await db.exec(
     await readFile("supabase/migrations/202610050001_companions.sql", "utf8"),
@@ -31,7 +31,13 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
-    `insert into auth.users values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
+    await readFile(
+      "supabase/migrations/20261006182258_account_erasure.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    `insert into auth.users(id) values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
   );
 });
 afterAll(async () => {
@@ -180,14 +186,16 @@ it("claims invitations once for the verified email and never reopens them on del
   await expect(
     db.exec(`select public.claim_invitation('${b}','a@example.com','digest')`),
   ).rejects.toThrow("invalid invitation");
-  await db.exec(`delete from auth.users where id='${a}'`);
+  await db.exec(
+    `update public.agents set state='{"deletion":{"instance":true,"identity":true}}' where owner_id='${a}'; delete from auth.users where id='${a}'`,
+  );
   expect(
     (
       await db.query(
         "select used_by from public.invitations where token_hash='digest'",
       )
-    ).rows[0],
-  ).toEqual({ used_by: a });
+    ).rows,
+  ).toEqual([]);
 });
 it("atomically enrolls customers and consumes invitations, rolls back failures, and restricts the RPC", async () => {
   const owner = "aaaa1111-1111-4111-8111-111111111111";
@@ -215,7 +223,7 @@ it("atomically enrolls customers and consumes invitations, rolls back failures, 
       )
     ).rows[0],
   ).toEqual({ used_by: null });
-  await db.exec(`insert into auth.users values('${owner}')`);
+  await db.exec(`insert into auth.users(id) values('${owner}')`);
   await db.exec("set role service_role");
   await db.exec(accept);
   await db.exec(accept.replace('"Original"', '"Overwrite"'));
@@ -290,4 +298,118 @@ it("leases serialize work and only the owning token can release them", async () 
   expect(
     (await db.query("select * from public.customer_leases")).rows,
   ).toHaveLength(0);
+});
+
+it("guards Auth deletion until provider cleanup and erases all owned data atomically", async () => {
+  const owner = "cccc1111-1111-4111-8111-111111111111";
+  await db.exec(`
+    insert into auth.users(id,email) values('${owner}','auth-close@example.com');
+    insert into public.customers(id,email,profile) values('${owner}','profile-close@example.com','{}');
+    insert into public.agents(owner_id,state) values('${owner}','{"status":"deleting","deletion":{"instance":true,"identity":false}}');
+    insert into public.workspace_items(id,owner_id,kind,item) values(gen_random_uuid(),'${owner}','wiki','{}');
+    insert into public.notifications(id,owner_id,note) values(gen_random_uuid(),'${owner}','{}');
+    insert into public.conversations(owner_id,session_id,conversation) values('${owner}','close-session','{}');
+    insert into public.cron_archive(owner_id,run_key,run) values('${owner}','close-run','{}');
+    insert into public.application_jobs(owner_id,kind,status) values('${owner}','cleanup','running'),('${owner}','provision','completed');
+    select public.claim_customer_lease('${owner}',gen_random_uuid());
+    insert into public.invitations(email,token_hash,used_by,expires_at) values
+      ('profile-close@example.com','close-consumed','${owner}',now()+interval '1 day'),
+      ('auth-close@example.com','close-pending',null,now()+interval '1 day');
+    insert into public.beta_requests(email,approved_by) values
+      ('profile-close@example.com','${owner}'),('auth-close@example.com',null),('someone-else@example.com','${owner}');
+  `);
+  const ownedTables = [
+    ["auth.users", "id"],
+    ["public.customers", "id"],
+    ["public.agents", "owner_id"],
+    ["public.workspace_items", "owner_id"],
+    ["public.notifications", "owner_id"],
+    ["public.conversations", "owner_id"],
+    ["public.cron_archive", "owner_id"],
+    ["public.application_jobs", "owner_id"],
+    ["public.customer_leases", "owner_id"],
+  ];
+  const counts = async () =>
+    Promise.all(
+      ownedTables.map(
+        async ([table, column]) =>
+          (
+            await db.query<{ count: number }>(
+              `select count(*)::int as count from ${table} where ${column}='${owner}'`,
+            )
+          ).rows[0].count,
+      ),
+    );
+  const before = await counts();
+  expect(before.every((count) => count > 0)).toBe(true);
+  await expect(
+    db.exec(`delete from auth.users where id='${owner}'`),
+  ).rejects.toThrow("provider cleanup must complete");
+  expect(await counts()).toEqual(before);
+  expect(
+    (
+      await db.query(
+        "select * from public.invitations where token_hash like 'close-%'",
+      )
+    ).rows,
+  ).toHaveLength(2);
+  await db.exec(
+    `update public.agents set state='{"status":"deleting","deletion":{"instance":true,"identity":true}}' where owner_id='${owner}'`,
+  );
+  // Even after cleanup is permitted, an Auth transaction rollback restores ancillary rows.
+  await db.exec(`begin; delete from auth.users where id='${owner}'; rollback;`);
+  expect(await counts()).toEqual(before);
+  expect(
+    (
+      await db.query(
+        "select * from public.invitations where token_hash like 'close-%'",
+      )
+    ).rows,
+  ).toHaveLength(2);
+  await db.exec(`delete from auth.users where id='${owner}'`);
+  expect(await counts()).toEqual(ownedTables.map(() => 0));
+  expect(
+    (
+      await db.query(
+        "select * from public.invitations where token_hash like 'close-%'",
+      )
+    ).rows,
+  ).toHaveLength(0);
+  expect(
+    (
+      await db.query(
+        "select * from public.beta_requests where email in ('profile-close@example.com','auth-close@example.com')",
+      )
+    ).rows,
+  ).toHaveLength(0);
+  expect(
+    (
+      await db.query(
+        "select approved_by from public.beta_requests where email='someone-else@example.com'",
+      )
+    ).rows,
+  ).toEqual([{ approved_by: null }]);
+  expect(
+    (await db.query(`select * from public.customers where id='${b}'`)).rows,
+  ).toHaveLength(1);
+  await expect(
+    db.exec(`select public.enqueue_application_job('${owner}','provision')`),
+  ).rejects.toThrow("foreign key");
+  await db.exec("set role authenticated");
+  await expect(db.exec("select public.erase_account_links()")).rejects.toThrow(
+    "permission denied",
+  );
+  await db.exec("reset role");
+});
+
+it("preserves email-scoped invitation locks that are not Auth accounts", async () => {
+  const lock = "dddd1111-1111-4111-8111-111111111111";
+  expect(
+    (
+      await db.query(
+        `select public.claim_customer_lease('${lock}', '${lock}') as claimed`,
+      )
+    ).rows,
+  ).toEqual([{ claimed: true }]);
+  await db.exec(`select public.release_customer_lease('${lock}','${lock}')`);
 });

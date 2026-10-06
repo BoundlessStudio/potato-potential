@@ -337,8 +337,13 @@ export class DemoAgent37 implements AgentProvider {
   }
 }
 export class DemoInkbox implements InkboxProvider {
+  async removeIdentity(handle: string) {
+    await this.request(`/identities/${handle}`, { method: "DELETE" });
+  }
   identities = new Map<string, any>();
   async request(path: string, init?: RequestInit): Promise<any> {
+    if (path === "/identities" && (!init?.method || init.method === "GET"))
+      return [...this.identities.values()].map((row) => structuredClone(row));
     if (path.includes("/imessage/assignments"))
       return [{ remote_number: "+14165550123", status: "active" }];
     if (path === "/identities" && init?.method === "POST") {

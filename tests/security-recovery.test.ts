@@ -88,7 +88,7 @@ it("leaves invitations retryable on profile failure and accepts tokenless retrie
   expect((await repo.invitations())[0].usedBy).toBe(DEMO_NEW_USER);
 });
 
-it("requires a new approval after deletion, mints a fresh token and keeps the old token consumed", async () => {
+it("requires a new approval after deletion, mints a fresh token and erases the old invitation", async () => {
   const deliveries: { url: string; digest: string }[] = [];
   dep.invitationEmail = async (input) => {
     deliveries.push(input);
@@ -112,6 +112,8 @@ it("requires a new approval after deletion, mints a fresh token and keeps the ol
     ).status,
   ).toBe(409);
   await repo.removeCustomer(DEMO_NEW_USER);
+  expect(await repo.invitations()).toHaveLength(0);
+  expect(await repo.betaRequests()).toHaveLength(0);
   expect(
     (await call("/invitations/accept", "POST", {}, "demo-new")).status,
   ).toBe(403);
@@ -149,6 +151,42 @@ it("requires a new approval after deletion, mints a fresh token and keeps the ol
       })
     ).status,
   ).toBe(409);
+});
+
+it("marks account closure before dispatch and denies further setup and workspace access", async () => {
+  vi.mocked(dep.queue.send).mockImplementation(async (kind, owner) => {
+    expect(kind).toBe("cleanup");
+    expect(owner).toBe(DEMO_USER);
+    expect((await repo.agent(owner))!.status).toBe("deleting");
+  });
+  expect((await call("/account", "DELETE")).status).toBe(202);
+  for (const [path, method, body] of [
+    ["/items", "GET", undefined],
+    ["/items", "POST", { kind: "wiki", title: "Closing account" }],
+    ["/responses", "POST", { input: "Keep working" }],
+    ["/onboarding/retry", "POST", {}],
+    ["/onboarding/verify-phone", "POST", {}],
+  ] as const) {
+    const response = await call(path, method, body);
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: { code: "account_deleting" },
+    });
+  }
+  const create = vi.spyOn(a37, "createInstance");
+  await lifecycle.provision(DEMO_USER);
+  expect(create).not.toHaveBeenCalled();
+  expect((await call("/me")).status).toBe(200);
+});
+it("keeps closure intent when dispatch fails and recovers it from account polling", async () => {
+  vi.mocked(dep.queue.send).mockRejectedValueOnce(
+    new HttpError(503, "queue_unavailable", "Dispatch unavailable"),
+  );
+  expect((await call("/account", "DELETE")).status).toBe(502);
+  expect((await repo.agent(DEMO_USER))!.status).toBe("deleting");
+  expect((await call("/me")).status).toBe(200);
+  expect(dep.queue.send).toHaveBeenLastCalledWith("cleanup", DEMO_USER);
+  expect(await repo.profile(DEMO_USER)).not.toBeNull();
 });
 
 it("serializes a phone-code refresh and cleanup so deletion progress cannot be overwritten", async () => {

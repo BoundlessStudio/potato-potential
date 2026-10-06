@@ -220,6 +220,13 @@ export class MemoryRepository implements Repository {
     return [...this.runs.values()].filter((row) => row.ownerId === ownerId);
   }
   async removeCustomer(ownerId: string) {
+    const email = this.profiles.get(ownerId)?.email.toLowerCase();
+    for (const [digest, invitation] of this.invites)
+      if (invitation.usedBy === ownerId || invitation.email === email)
+        this.invites.delete(digest);
+    if (email) this.betaRows.delete(email);
+    for (const row of this.betaRows.values())
+      if (row.approvedBy === ownerId) row.approvedBy = undefined;
     this.profiles.delete(ownerId);
     this.agentRows.delete(ownerId);
     for (const map of [this.itemRows, this.notes, this.threads, this.runs])
@@ -549,7 +556,8 @@ export class SupabaseRepository implements Repository {
     ).map((row) => row.run);
   }
   async removeCustomer(ownerId: string) {
-    // Called only after both provider deletions succeed. Auth deletion cascades the workspace.
+    // The Auth deletion trigger requires both provider confirmations, erases
+    // signup/invitation/job/lease records, and cascades the workspace atomically.
     const result = await this.client.auth.admin.deleteUser(ownerId);
     if (result.error && result.error.status !== 404)
       throw new HttpError(

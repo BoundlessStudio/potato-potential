@@ -4,6 +4,52 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+it("requires Agent37 to confirm deletion of the requested instance", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json({ id: "abcdefghij", deleted: true }))
+    .mockResolvedValueOnce(Response.json({ id: "abcdefghij", deleted: false }))
+    .mockResolvedValueOnce(Response.json({ id: "other12345", deleted: true }))
+    .mockResolvedValueOnce(
+      Response.json({ error: "not_found" }, { status: 404 }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Agent37("admin");
+  await provider.removeInstance("abcdefghij");
+  await expect(provider.removeInstance("abcdefghij")).rejects.toMatchObject({
+    code: "instance_deletion_unconfirmed",
+  });
+  await expect(provider.removeInstance("abcdefghij")).rejects.toMatchObject({
+    code: "instance_deletion_unconfirmed",
+  });
+  await expect(provider.removeInstance("abcdefghij")).rejects.toMatchObject({
+    status: 404,
+  });
+});
+it("requires Inkbox's completed cascade and preserves carrier-release failures for retries", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    .mockResolvedValueOnce(
+      Response.json({ error: "carrier_release_failed" }, { status: 502 }),
+    )
+    .mockResolvedValueOnce(Response.json({ queued: true }));
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Inkbox("admin");
+  await provider.removeIdentity("own-identity");
+  await expect(provider.removeIdentity("own-identity")).rejects.toMatchObject({
+    status: 502,
+  });
+  await expect(provider.removeIdentity("own-identity")).rejects.toMatchObject({
+    code: "identity_deletion_unconfirmed",
+  });
+  expect(
+    fetch.mock.calls.every(
+      ([url, init]) =>
+        url.endsWith("/identities/own-identity") && init.method === "DELETE",
+    ),
+  ).toBe(true);
+});
 it.each(["health", "exec", "start"])(
   "allows a two-minute cold wake for Agent37 %s and still bounds a hung request",
   async (operation) => {

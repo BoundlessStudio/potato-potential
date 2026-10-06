@@ -104,12 +104,9 @@ describe("durable lifecycle", () => {
   it("retains ownership after partial deletion and resumes only outstanding deletion", async () => {
     await finish();
     const remove = vi.spyOn(a37, "removeInstance");
-    const request = inkbox.request.bind(inkbox);
-    vi.spyOn(inkbox, "request").mockImplementationOnce(async (path, init) => {
-      if (init?.method === "DELETE")
-        throw new HttpError(503, "unavailable", "Temporary provider outage");
-      return request(path, init);
-    });
+    vi.spyOn(inkbox, "removeIdentity").mockRejectedValueOnce(
+      new HttpError(502, "carrier_unavailable", "Temporary carrier outage"),
+    );
     await expect(lifecycle.cleanup(profile.id)).rejects.toThrow();
     expect(await repo.profile(profile.id)).not.toBeNull();
     expect((await repo.agent(profile.id))!.deletion).toEqual({
@@ -120,6 +117,114 @@ describe("durable lifecycle", () => {
     expect(await repo.profile(profile.id)).toBeNull();
     expect(remove).toHaveBeenCalledTimes(1);
     expect(inkbox.identities.size).toBe(0);
+  });
+  it("waits for the single computer and identity to be removed before erasing the account", async () => {
+    const agent = await finish();
+    const order: string[] = [];
+    const removeInstance = a37.removeInstance.bind(a37);
+    const removeIdentity = inkbox.removeIdentity.bind(inkbox);
+    const removeCustomer = repo.removeCustomer.bind(repo);
+    vi.spyOn(a37, "removeInstance").mockImplementation(async (id) => {
+      order.push("computer");
+      expect(id).toBe(agent.instanceId);
+      await removeInstance(id);
+    });
+    vi.spyOn(inkbox, "removeIdentity").mockImplementation(async (handle) => {
+      order.push("identity");
+      expect(await repo.profile(profile.id)).not.toBeNull();
+      expect(a37.instances.size).toBe(0);
+      await removeIdentity(handle);
+    });
+    vi.spyOn(repo, "removeCustomer").mockImplementation(async (id) => {
+      order.push("account");
+      expect(inkbox.identities.size).toBe(0);
+      await removeCustomer(id);
+    });
+    await lifecycle.cleanup(profile.id);
+    expect(order).toEqual(["computer", "identity", "account"]);
+  });
+  it("preserves the identity and account when computer deletion fails", async () => {
+    await finish();
+    vi.spyOn(a37, "removeInstance").mockRejectedValueOnce(
+      new HttpError(503, "unavailable", "Computer unavailable"),
+    );
+    const removeIdentity = vi.spyOn(inkbox, "removeIdentity");
+    const removeCustomer = vi.spyOn(repo, "removeCustomer");
+    await expect(lifecycle.cleanup(profile.id)).rejects.toThrow();
+    expect(removeIdentity).not.toHaveBeenCalled();
+    expect(removeCustomer).not.toHaveBeenCalled();
+    expect((await repo.agent(profile.id))!.status).toBe("deleting");
+    expect(a37.instances.size).toBe(1);
+    expect(inkbox.identities.size).toBe(1);
+    await lifecycle.cleanup(profile.id);
+    expect(await repo.profile(profile.id)).toBeNull();
+  });
+  it("recovers the one owned computer after a lost create reply and leaves other owners alone", async () => {
+    const create = a37.createInstance.bind(a37);
+    vi.spyOn(a37, "createInstance").mockImplementationOnce(async (body) => {
+      await create(body);
+      throw new Error("Lost create reply");
+    });
+    await expect(lifecycle.provision(profile.id)).rejects.toThrow();
+    expect((await repo.agent(profile.id))!.instanceId).toBeUndefined();
+    const other = await create({ user: randomUUID(), template: "preview" });
+    const remove = vi.spyOn(a37, "removeInstance");
+    await lifecycle.cleanup(profile.id);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(a37.instances.has(other.id)).toBe(true);
+    expect(await repo.profile(profile.id)).toBeNull();
+  });
+  it("finds the same Inkbox identity by UUID after its handle changed", async () => {
+    const agent = await finish();
+    const identity = inkbox.identities.get(agent.handle!);
+    inkbox.identities.delete(agent.handle!);
+    identity.agent_handle = "renamed-identity";
+    inkbox.identities.set(identity.agent_handle, identity);
+    await inkbox.request("/identities", {
+      method: "POST",
+      body: JSON.stringify({ agent_handle: "unrelated-identity" }),
+    });
+    const remove = vi.spyOn(inkbox, "removeIdentity");
+    await lifecycle.cleanup(profile.id);
+    expect(remove).toHaveBeenCalledWith("renamed-identity");
+    expect(inkbox.identities.has("renamed-identity")).toBe(false);
+    expect(inkbox.identities.has("unrelated-identity")).toBe(true);
+  });
+  it("retries only account erasure after both provider deletions succeeded", async () => {
+    await finish();
+    const computer = vi.spyOn(a37, "removeInstance");
+    const identity = vi.spyOn(inkbox, "removeIdentity");
+    vi.spyOn(repo, "removeCustomer").mockRejectedValueOnce(
+      new Error("Auth unavailable"),
+    );
+    await expect(lifecycle.cleanup(profile.id)).rejects.toThrow(
+      "Auth unavailable",
+    );
+    expect(await repo.profile(profile.id)).not.toBeNull();
+    expect((await repo.agent(profile.id))!.deletion).toEqual({
+      instance: true,
+      identity: true,
+    });
+    await lifecycle.cleanup(profile.id);
+    expect(computer).toHaveBeenCalledTimes(1);
+    expect(identity).toHaveBeenCalledTimes(1);
+    expect(await repo.profile(profile.id)).toBeNull();
+  });
+  it("accepts a missing computer on retry after its successful delete reply was lost", async () => {
+    await finish();
+    const remove = a37.removeInstance.bind(a37);
+    vi.spyOn(a37, "removeInstance").mockImplementation(async (id) => {
+      if (!a37.instances.has(id))
+        throw new HttpError(404, "not_found", "Already deleted");
+      await remove(id);
+      throw new Error("Lost delete reply");
+    });
+    await expect(lifecycle.cleanup(profile.id)).rejects.toThrow(
+      "Lost delete reply",
+    );
+    expect(inkbox.identities.size).toBe(1);
+    await lifecycle.cleanup(profile.id);
+    expect(await repo.profile(profile.id)).toBeNull();
   });
   it("surfaces native Inkbox recovery actions and preserves its identity and retry key", async () => {
     await lifecycle.provision(profile.id);

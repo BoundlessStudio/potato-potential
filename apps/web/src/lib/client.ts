@@ -130,8 +130,9 @@ export async function stream(
     "Your agent is still working. Reconnect to continue watching.",
   );
 }
-export async function signOut() {
-  if (demo) localStorage.removeItem("boundless-demo-user");
-  else await supabase().auth.signOut();
+export async function signOut(scope: "global" | "local" = "global") {
+  if (demo) localStorage.setItem("boundless-demo-user", "signed-out");
+  else await supabase().auth.signOut({ scope });
+  localStorage.removeItem("boundless-invite");
   window.location.assign("/");
 }

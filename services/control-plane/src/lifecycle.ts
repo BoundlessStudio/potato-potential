@@ -450,7 +450,12 @@ export class Lifecycle {
     return this.repo.locked(ownerId, async () => {
       const agent = await this.repo.agent(ownerId);
       const profile = await this.repo.profile(ownerId);
-      if (!agent?.identityId || !profile || agent.phase !== "phone")
+      if (
+        !agent?.identityId ||
+        !profile ||
+        agent.phase !== "phone" ||
+        ["deleting", "deleted"].includes(agent.status)
+      )
         throw new HttpError(
           409,
           "not_ready",
@@ -484,9 +489,22 @@ export class Lifecycle {
       await this.repo.saveAgent(agent);
     });
   }
+  async requestCleanup(ownerId: string) {
+    return this.repo.locked(ownerId, async () => {
+      const agent = await this.newAgent(ownerId);
+      agent.status = "deleting";
+      agent.deletion ||= { instance: false, identity: false };
+      agent.error = undefined;
+      await this.repo.saveAgent(agent);
+    });
+  }
   async cleanup(ownerId: string) {
     return this.repo.locked(ownerId, async () => {
-      const agent = await this.repo.agent(ownerId);
+      const agent =
+        (await this.repo.agent(ownerId)) ||
+        ((await this.repo.profile(ownerId))
+          ? await this.newAgent(ownerId)
+          : null);
       if (!agent) {
         await this.repo.removeCustomer(ownerId);
         return;
@@ -497,23 +515,55 @@ export class Lifecycle {
       try {
         if (!agent.deletion.instance) {
           // A lost create response may exist remotely even without an instance id saved locally.
-          const instanceId =
-            agent.instanceId ||
-            (await this.a37.listInstances()).find(
+          let instanceId = agent.instanceId;
+          if (!instanceId) {
+            const owned = (await this.a37.listInstances()).filter(
               (row) => row.user === ownerId && row.status !== "deleted",
-            )?.id;
+            );
+            if (owned.length > 1)
+              throw new HttpError(
+                409,
+                "instance_ownership_conflict",
+                "Expected one computer for this account. Operator recovery is required.",
+              );
+            instanceId = owned[0]?.id;
+            if (instanceId) {
+              agent.instanceId = instanceId;
+              await this.repo.saveAgent(agent);
+            }
+          }
           if (instanceId)
             await this.ignoreMissing(() => this.a37.removeInstance(instanceId));
           agent.deletion.instance = true;
           await this.repo.saveAgent(agent);
         }
         if (!agent.deletion.identity) {
-          if (agent.handle)
-            await this.ignoreMissing(() =>
-              this.inkbox.request(`/identities/${agent.handle}`, {
-                method: "DELETE",
-              }),
+          let handle = agent.handle;
+          if (agent.identityId) {
+            const identities = await this.inkbox.request("/identities");
+            if (!Array.isArray(identities))
+              throw new HttpError(
+                502,
+                "identity_lookup_failed",
+                "Identity cleanup needs another retry.",
+              );
+            const identity = identities.find(
+              (row) => row.id === agent.identityId,
             );
+            handle = identity?.agent_handle;
+            if (identity && !handle)
+              throw new HttpError(
+                502,
+                "identity_lookup_failed",
+                "Identity cleanup needs another retry.",
+              );
+            if (handle && handle !== agent.handle) {
+              agent.handle = handle;
+              await this.repo.saveAgent(agent);
+            }
+          }
+          if (handle)
+            await this.ignoreMissing(() => this.inkbox.removeIdentity(handle));
           agent.deletion.identity = true;
           await this.repo.saveAgent(agent);
         }

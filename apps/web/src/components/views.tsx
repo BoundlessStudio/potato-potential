@@ -1102,12 +1102,14 @@ export function Settings({
   agent,
   operator = false,
   refresh,
+  closeAccount,
   ...feedback
 }: {
   profile: Profile;
   agent: PublicAgent;
   operator?: boolean;
   refresh: () => void;
+  closeAccount: () => Promise<void>;
 } & Feedback) {
   const [draft, setDraft] = useState(profile);
   const [saving, setSaving] = useState(false);
@@ -1118,6 +1120,7 @@ export function Settings({
   const [memoryFile, setMemoryFile] = useState<"user" | "memory">("user");
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [channels, setChannels] = useState<any>(null);
   useEffect(() => setDraft(profile), [profile]);
   async function save(event: FormEvent) {
@@ -1407,7 +1410,9 @@ export function Settings({
       {deleting && (
         <Modal
           title="Say goodbye to this companion?"
-          onClose={() => setDeleting(false)}
+          onClose={() => {
+            if (!closing) setDeleting(false);
+          }}
         >
           <p>
             The computer, phone identity, and your workspace will be removed.
@@ -1416,26 +1421,30 @@ export function Settings({
           <div className="modal-actions">
             <button
               className="button button-secondary"
+              disabled={closing}
               onClick={() => setDeleting(false)}
             >
               Keep my companion
             </button>
             <button
               className="button button-danger"
+              disabled={closing}
               onClick={async () => {
+                setClosing(true);
                 try {
-                  await api("/account", "DELETE");
+                  await closeAccount();
                   setDeleting(false);
-                  refresh();
                   feedback.onSuccess(
                     "Account cleanup started. We’ll keep the record until both providers confirm deletion.",
                   );
                 } catch (error) {
                   feedback.onError(errorText(error));
+                } finally {
+                  setClosing(false);
                 }
               }}
             >
-              Delete my account
+              {closing ? "Closing account…" : "Delete my account"}
             </button>
           </div>
         </Modal>

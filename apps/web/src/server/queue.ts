@@ -14,7 +14,9 @@ export function productionQueue() {
     async maintenance() {
       await jobs.repair();
       for (const agent of await dep.repo.agents()) {
-        if (agent.status === "ready" && !agent.suspended)
+        if (agent.status === "deleting")
+          await jobs.send("cleanup", agent.ownerId);
+        else if (agent.status === "ready" && !agent.suspended)
           await jobs.send("reconcile", agent.ownerId);
       }
     },

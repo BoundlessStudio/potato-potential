@@ -333,13 +333,22 @@ export function createApp(dep: Dependencies) {
     }
     next();
   });
-  async function account(req: Request) {
+  async function account(req: Request, allowDeleting = false) {
     const profile = await repo.profile(actor(req).id);
     if (!profile)
       throw new HttpError(
         403,
         "invitation_required",
         "Accept your invitation to create an agent.",
+      );
+    if (
+      !allowDeleting &&
+      (await repo.agent(actor(req).id))?.status === "deleting"
+    )
+      throw new HttpError(
+        409,
+        "account_deleting",
+        "Your account is closing. Retry deletion if cleanup is interrupted.",
       );
     return profile;
   }
@@ -374,6 +383,8 @@ export function createApp(dep: Dependencies) {
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);
     let agent = await repo.agent(actor(req).id);
+    if (agent?.status === "deleting")
+      await queue.send("cleanup", actor(req).id).catch(() => {});
     if (agent && suspensionPending(agent))
       await queue.send("reconcile", actor(req).id).catch(() => {});
     if (
@@ -493,7 +504,8 @@ export function createApp(dep: Dependencies) {
     res.json({ profile: updated });
   });
   app.delete("/api/account", async (req, res) => {
-    await account(req);
+    await account(req, true);
+    await lifecycle.requestCleanup(actor(req).id);
     await queue.send("cleanup", actor(req).id);
     res.status(202).json({ queued: true });
   });

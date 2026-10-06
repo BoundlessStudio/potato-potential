@@ -154,7 +154,15 @@ export class Agent37 implements AgentProvider {
     return this.json(this.host(`/instances/${id}`));
   }
   async removeInstance(id: string) {
-    await this.host(`/instances/${id}`, { method: "DELETE" });
+    const result = await this.json(
+      this.host(`/instances/${id}`, { method: "DELETE" }),
+    );
+    if (result.id !== id || result.deleted !== true)
+      throw new HttpError(
+        502,
+        "instance_deletion_unconfirmed",
+        "The computer provider has not confirmed deletion. Retry shortly.",
+      );
   }
   async restart(id: string) {
     await this.host(`/instances/${id}/restart`, { method: "POST" });
@@ -356,6 +364,7 @@ export class Agent37 implements AgentProvider {
 
 export interface InkboxProvider {
   request(path: string, init?: RequestInit): Promise<any>;
+  removeIdentity(handle: string): Promise<void>;
   findConfirmation(
     identityId: string,
     phone: string,
@@ -365,8 +374,8 @@ export interface InkboxProvider {
 }
 export class Inkbox implements InkboxProvider {
   constructor(private key: string) {}
-  async request(path: string, init: RequestInit = {}) {
-    const res = await checkedFetch(`https://inkbox.ai/api/v1${path}`, {
+  private fetch(path: string, init: RequestInit = {}) {
+    return checkedFetch(`https://inkbox.ai/api/v1${path}`, {
       ...init,
       headers: {
         "X-API-Key": this.key,
@@ -374,7 +383,21 @@ export class Inkbox implements InkboxProvider {
         ...init.headers,
       },
     });
+  }
+  async request(path: string, init: RequestInit = {}) {
+    const res = await this.fetch(path, init);
     return res.status === 204 ? {} : res.json();
+  }
+  async removeIdentity(handle: string) {
+    const res = await this.fetch(`/identities/${encodeURIComponent(handle)}`, {
+      method: "DELETE",
+    });
+    if (res.status !== 204)
+      throw new HttpError(
+        502,
+        "identity_deletion_unconfirmed",
+        "The identity provider has not confirmed deletion. Retry shortly.",
+      );
   }
   async findConfirmation(
     identityId: string,

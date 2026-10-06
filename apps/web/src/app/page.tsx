@@ -121,6 +121,7 @@ export default function Home() {
   const chatBottom = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const alive = useRef(true);
+  const closingAccount = useRef(false);
   const say = useCallback((message: string, error = false) => {
     setToast({ message, error });
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -137,6 +138,11 @@ export default function Home() {
         return;
       }
       let data = await api("/me");
+      if (data.agent?.status === "deleting") closingAccount.current = true;
+      if (closingAccount.current && !data.profile) {
+        await signOut("local");
+        return;
+      }
       const invitation = localStorage.getItem("boundless-invite");
       if ((invitation || data.invited) && !data.profile) {
         await api(
@@ -154,7 +160,8 @@ export default function Home() {
       setOperator(data.operator);
     } catch (error) {
       setSignedIn(false);
-      if ((error as any).status !== 401) onError(err(error));
+      if ((error as any).status === 401) await signOut("local");
+      else onError(err(error));
     } finally {
       setBooting(false);
     }
@@ -1012,6 +1019,14 @@ export default function Home() {
                 profile={profile}
                 agent={agent}
                 operator={operator}
+                closeAccount={async () => {
+                  closingAccount.current = true;
+                  try {
+                    await api("/account", "DELETE");
+                  } finally {
+                    await loadAccount();
+                  }
+                }}
                 refresh={() => {
                   void loadAccount();
                   void refreshWorkspace();
@@ -1428,6 +1443,7 @@ function Setup({
   verify: () => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const deleting = agent.status === "deleting";
   const labels = [
     ["identity", "A way to keep in touch"],
     ["computer", "A computer of their own"],
@@ -1448,35 +1464,53 @@ function Setup({
     <main className="setup-page">
       <Brand />
       <div className="setup-card">
-        <span className="eyebrow">A FEW LITTLE THINGS COMING TOGETHER</span>
+        <span className="eyebrow">
+          {deleting
+            ? "CLOSING YOUR ACCOUNT"
+            : "A FEW LITTLE THINGS COMING TOGETHER"}
+        </span>
         <h1>
           {agent.status === "deleting"
             ? "Saying goodbye, carefully."
             : `Making room for ${profile?.agentName || "your companion"}.`}
         </h1>
         <p>
-          {agent.status === "awaiting_phone"
-            ? "A little hello from your phone, and we’re on our way."
-            : "You can come back to this page. Setup will pick up where it left off."}
+          {deleting
+            ? "Your computer and messaging identity are removed before your account and workspace data. You can return here to check progress."
+            : agent.status === "awaiting_phone"
+              ? "A little hello from your phone, and we’re on our way."
+              : "You can come back to this page. Setup will pick up where it left off."}
         </p>
         <div className="setup-steps">
-          {labels.map(([id, label]) => (
-            <div
-              key={id}
-              className={`${agent.completed.includes(id as any) ? "done" : ""} ${agent.phase === id ? "current" : ""}`}
-            >
-              <span>
-                {agent.completed.includes(id as any) ? (
-                  <Check size={16} />
-                ) : agent.phase === id && agent.status !== "awaiting_phone" ? (
-                  <Loader2 className="spin" size={16} />
-                ) : (
-                  <span />
-                )}
-              </span>
-              {label}
-            </div>
-          ))}
+          {deleting
+            ? [
+                ["Computer removed", agent.deletion?.instance],
+                ["Messaging identity removed", agent.deletion?.identity],
+                ["Account and workspace removed", false],
+              ].map(([label, done]) => (
+                <div key={String(label)} className={done ? "done" : ""}>
+                  <span>{done ? <Check size={16} /> : <span />}</span>
+                  {label}
+                </div>
+              ))
+            : labels.map(([id, label]) => (
+                <div
+                  key={id}
+                  className={`${agent.completed.includes(id as any) ? "done" : ""} ${agent.phase === id ? "current" : ""}`}
+                >
+                  <span>
+                    {agent.completed.includes(id as any) ? (
+                      <Check size={16} />
+                    ) : agent.phase === id &&
+                      agent.status !== "awaiting_phone" ? (
+                      <Loader2 className="spin" size={16} />
+                    ) : (
+                      <span />
+                    )}
+                  </span>
+                  {label}
+                </div>
+              ))}
         </div>
         {agent.status === "awaiting_phone" && (
           <div className="phone-verification">
@@ -1536,7 +1570,7 @@ function Setup({
               disabled={busy}
             >
               <RefreshCw size={16} />
-              Continue setup
+              {deleting ? "Retry account deletion" : "Continue setup"}
             </button>
           </div>
         )}
