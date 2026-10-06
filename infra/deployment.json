@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_96xnHkHgswEjrjjXVJbtC5uwK5QX",
-    "deploymentUrl": "https://potato-potential-e32cyi3k3-venatio-studios.vercel.app",
-    "sourceCommit": "4107eb7871ea6c31ad1b2d954898aec494d678f3",
+    "deploymentId": "dpl_FQpzzrysZQX2Z6kVTGHPmn9vo1Dw",
+    "deploymentUrl": "https://potato-potential-agtcf8fb8-venatio-studios.vercel.app",
+    "sourceCommit": "2158ed15f2b6f486ed66e841dc66d17e7619e403",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -15,7 +15,7 @@
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
     "region": "us-east-2",
-    "migrations": ["202610050001", "202610050002"],
+    "migrations": ["202610050001", "202610050002", "202610050003"],
     "siteUrl": "https://potato-potential.rgbknights.com",
     "redirectUrl": "https://potato-potential.rgbknights.com/auth/callback"
   },
@@ -38,8 +38,8 @@
   "validation": {
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 66,
-    "mockBrowserTests": 18,
+    "unitAdapterDatabaseTests": 71,
+    "mockBrowserTests": 21,
     "githubChecks": "passed for deployed source commit",
     "liveTenantIsolation": "passed with temporary fixtures removed",
     "liveWorkflow": "persisted job dispatched and completed",
@@ -51,8 +51,11 @@
     "ownerPhoneAndChannelAcceptance": "pending",
     "operatorSelfEnrollment": "verified operator can enroll; uninvited customers and unverified accounts rejected",
     "invitationAuthority": "configured operator only; API and UI regression checks passed",
-    "invitationPage": "invited users, acceptance, current Auth account status and Resend email sending; owner-only before or after setup",
+    "invitationPage": "operator-only beta review queue with approval, delivery, acceptance and current Auth account status; available before or after companion setup",
     "invitationEmail": "Resend key and factory.rgbknights.com sender verified; transport and failure handling mocked; recipient delivery pending first operator send",
+    "betaSignup": "public homepage saves normalized deduplicated email requests without creating an invitation, customer or agent; live API and server-only RLS verified; temporary fixtures removed",
+    "betaApproval": "only configured operator can review and approve; adding an email queues review; approved delivery retries retain an encrypted invitation and reuse its email idempotency key; mocked transport checks passed",
+    "passwordlessSignIn": "dedicated /signin page uses Supabase email magic links and the existing PKCE callback; published desktop/mobile pages and native OTP request checked with transport intercepted; verified email invitation claim passed live without browser invitation storage",
     "appsCatalog": "live owner catalog: first 24, next 24, Gmail search and connections passed; adapter normalizes Agent37 items; browser retry and stale-page checks passed",
     "appsLayout": "compact horizontal cards with provider logos, fallback initials and Connect controls; Composio hidden in catalog and connected list; five browser regressions and desktop/mobile visual checks passed",
     "welcomeArtwork": "original SVG feature overview; selected accent color; desktop workspace and mobile layout checks passed",
