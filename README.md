@@ -57,7 +57,7 @@ The published `boundless-hermes-desktop@4` template is recorded in `infra/deskto
 
 The operator's **Settings → Their computer** card has separate **Restart computer** and **Update computer** controls. Restart keeps the installed template; Update applies the server's approved `DESKTOP_TEMPLATE` pin and includes a restart. Customers cannot submit template names or computer IDs. Confirming saves an operation before queuing its durable job; reopening Settings shows progress. A dropped provider reply is checked against the installed template and boot fingerprint rather than issuing another restart. Active web responses block maintenance, and account deletion or suspension prevents it.
 
-Activating these controls in production requires migration `202610050003_computer_maintenance.sql` and a new Vercel deployment. The current production deployment is recorded separately in `infra/deployment.json`.
+Computer updates use the existing durable reconciliation outbox and require only a new Vercel deployment. The worker holds the customer lease through job completion, preventing an overlapping routine reconciliation from losing a requested update. The current production deployment is recorded separately in `infra/deployment.json`.
 
 The portrait desktop uses a 540 × 1140 screen (9:19), maximized visible Chromium, and a matching noVNC viewing area. This is a narrow desktop browser, without phone user-agent or touch emulation. Chromium's 500-pixel minimum window width makes a 450-pixel screen clip the browser. An image update preserves `/home/node` and `/home/linuxbrew`, including native memory and the persisted browser profile, while resetting software outside those home folders. Unsaved browser forms and work in other channels can be interrupted.
 

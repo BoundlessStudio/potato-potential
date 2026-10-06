@@ -1,11 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import type { Dependencies, Queue } from "./app";
-import { reconcile } from "./app";
+import { reconcileLocked } from "./app";
 import { HttpError } from "./security";
 import {
   failComputerOperation,
-  maintainComputer,
+  computerBusy,
+  maintainComputerLocked,
 } from "./computer-maintenance";
 
 export type ApplicationJob = {
@@ -33,7 +34,8 @@ export class SupabaseJobs implements Queue {
     const job = this.check(
       await this.client.rpc("enqueue_application_job", {
         p_owner_id: ownerId,
-        p_kind: kind,
+        // Computer maintenance is desired-state reconciliation on the existing outbox.
+        p_kind: kind === "maintenance" ? "reconcile" : kind,
       }),
     ) as ApplicationJob;
     await this.dispatch(job.id);
@@ -140,7 +142,22 @@ export async function executeJobSlice(
       ? "complete"
       : "busy";
   }
+  let maintenanceOperationId: string | undefined;
   try {
+    if (job.kind === "reconcile" || job.kind === "maintenance") {
+      return await dep.repo.locked(job.owner_id, async () => {
+        const agent = await dep.repo.agent(job.owner_id);
+        let more = false;
+        if (agent && computerBusy(agent)) {
+          maintenanceOperationId = agent.computerOperation!.id;
+          more = await maintainComputerLocked(dep, job.owner_id);
+        } else await reconcileLocked(dep, job.owner_id);
+        // Finish under the same lease as the state read. A newly requested operation
+        // cannot be swallowed by an ordinary reconciliation that is about to finish.
+        await jobs.finish(id, worker, more ? "continue" : "completed");
+        return more ? "continue" : "complete";
+      });
+    }
     let more = false;
     if (job.kind === "provision") {
       await dep.lifecycle.provision(job.owner_id, true);
@@ -148,10 +165,8 @@ export async function executeJobSlice(
       more = !!agent && agent.status === "provisioning";
       // The ready phase marks status before sending an introduction, but only finishes after it returns.
       if (agent?.status === "ready") more = !agent.completed.includes("ready");
-    } else if (job.kind === "maintenance")
-      more = await maintainComputer(dep, job.owner_id);
-    else if (job.kind === "cleanup") await dep.lifecycle.cleanup(job.owner_id);
-    else await reconcile(dep, job.owner_id);
+    } else if (job.kind === "cleanup")
+      await dep.lifecycle.cleanup(job.owner_id);
     await jobs.finish(id, worker, more ? "continue" : "completed");
     return more ? "continue" : "complete";
   } catch (error) {
@@ -166,8 +181,8 @@ export async function executeJobSlice(
       retry ? "retry" : "failed",
       error instanceof HttpError ? error.code : "operation_interrupted",
     );
-    if (job.kind === "maintenance" && (!retry || job.failures >= 4))
-      await failComputerOperation(dep, job.owner_id);
+    if (maintenanceOperationId && (!retry || job.failures >= 4))
+      await failComputerOperation(dep, job.owner_id, maintenanceOperationId);
     return retry ? "retry" : "complete";
   }
 }

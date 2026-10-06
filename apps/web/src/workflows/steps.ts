@@ -28,7 +28,7 @@ export async function exhaustJob(id: string, worker: string) {
   const job = await jobs.claim(id, worker);
   if (job) {
     await jobs.finish(id, worker, "failed", "workflow_retry_limit");
-    if (job.kind === "maintenance") {
+    if (job.kind === "maintenance" || job.kind === "reconcile") {
       const { failComputerOperation } =
         await import("../../../../services/control-plane/src/computer-maintenance");
       await failComputerOperation(dep, job.owner_id);

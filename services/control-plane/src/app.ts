@@ -58,99 +58,93 @@ const cronId = z.string().regex(/^[a-f0-9]{12}$/);
 const date = () => new Date().toISOString();
 
 export async function reconcile(dep: Dependencies, ownerId: string) {
-  return dep.repo.locked(ownerId, async () => {
-    const agent = await dep.repo.agent(ownerId);
-    if (!agent?.instanceId || agent.status !== "ready") return;
-    if (agent.suspended || computerBusy(agent)) return;
-    const archived = await dep.repo.archived(ownerId);
-    const pending = new Map(
-      archived
-        .filter(
-          (run) =>
-            run.outcome === "running" ||
-            (run.outcome === "unknown" && Date.now() / 1000 - run.ran_at < 900),
-        )
-        .map((run) => [`${run.cronId}:${run.session_id}:${run.ran_at}`, run]),
-    );
-    const crons = await dep.a37.crons(agent.instanceId);
-    for (const cron of crons) {
-      if (cron.agent !== "hermes")
-        await dep.a37.patchCron(agent.instanceId, cron.id, { agent: "hermes" });
-      if (!cron.last_run) continue;
-      const runs = (await dep.a37.cronRuns(agent.instanceId, cron.id)).map(
-        (run) => ({
-          ...run,
-          cronId: cron.id,
-          name: cron.name,
-          outcome: "unknown" as const,
-        }),
-      );
-      for (const run of runs) {
-        const prior = archived.find(
-          (row) =>
-            row.cronId === run.cronId &&
-            row.session_id === run.session_id &&
-            row.ran_at === run.ran_at,
-        );
-        if (
-          prior?.outcome &&
-          prior.outcome !== "running" &&
-          !(
-            prior.outcome === "unknown" &&
-            Date.now() / 1000 - prior.ran_at < 900
-          )
-        ) {
-          run.outcome = prior.outcome as any;
-          continue;
-        }
-        if (run.status === "skipped") continue;
-        if (run.session_id) {
-          const session = await dep.a37.session(
-            agent.instanceId,
-            run.session_id,
-          );
-          run.outcome = (
-            session.active_response_id
-              ? "running"
-              : session.history.some((message) => message.role === "assistant")
-                ? "completed"
-                : "unknown"
-          ) as any;
-          await dep.repo.saveConversation({
-            ownerId,
-            id: run.session_id,
-            title: cron.name,
-            channel: "scheduled",
-            createdAt: new Date(run.ran_at * 1000).toISOString(),
-          });
-        }
-        pending.delete(`${run.cronId}:${run.session_id}:${run.ran_at}`);
-      }
-      // Archive first. A provider DELETE destroys its history; a failed archive must stop deletion.
-      await dep.repo.archive(ownerId, runs);
-      if (
-        isFiredOneTime(cron) &&
-        runs.some((run) => run.status === "triggered")
+  return dep.repo.locked(ownerId, () => reconcileLocked(dep, ownerId));
+}
+
+// The job worker already holds the customer lease through job completion.
+export async function reconcileLocked(dep: Dependencies, ownerId: string) {
+  const agent = await dep.repo.agent(ownerId);
+  if (!agent?.instanceId || agent.status !== "ready") return;
+  if (agent.suspended || computerBusy(agent)) return;
+  const archived = await dep.repo.archived(ownerId);
+  const pending = new Map(
+    archived
+      .filter(
+        (run) =>
+          run.outcome === "running" ||
+          (run.outcome === "unknown" && Date.now() / 1000 - run.ran_at < 900),
       )
-        await dep.a37.removeCron(agent.instanceId, cron.id);
-    }
-    // A one-time cron may already be removed while its turn is still running.
-    for (const run of pending.values()) {
-      if (!run.session_id) continue;
-      const session = await dep.a37.session(agent.instanceId, run.session_id);
-      if (!session.active_response_id)
-        await dep.repo.archive(ownerId, [
-          {
-            ...run,
-            outcome: session.history.some(
-              (message) => message.role === "assistant",
-            )
+      .map((run) => [`${run.cronId}:${run.session_id}:${run.ran_at}`, run]),
+  );
+  const crons = await dep.a37.crons(agent.instanceId);
+  for (const cron of crons) {
+    if (cron.agent !== "hermes")
+      await dep.a37.patchCron(agent.instanceId, cron.id, { agent: "hermes" });
+    if (!cron.last_run) continue;
+    const runs = (await dep.a37.cronRuns(agent.instanceId, cron.id)).map(
+      (run) => ({
+        ...run,
+        cronId: cron.id,
+        name: cron.name,
+        outcome: "unknown" as const,
+      }),
+    );
+    for (const run of runs) {
+      const prior = archived.find(
+        (row) =>
+          row.cronId === run.cronId &&
+          row.session_id === run.session_id &&
+          row.ran_at === run.ran_at,
+      );
+      if (
+        prior?.outcome &&
+        prior.outcome !== "running" &&
+        !(prior.outcome === "unknown" && Date.now() / 1000 - prior.ran_at < 900)
+      ) {
+        run.outcome = prior.outcome as any;
+        continue;
+      }
+      if (run.status === "skipped") continue;
+      if (run.session_id) {
+        const session = await dep.a37.session(agent.instanceId, run.session_id);
+        run.outcome = (
+          session.active_response_id
+            ? "running"
+            : session.history.some((message) => message.role === "assistant")
               ? "completed"
-              : "unknown",
-          },
-        ]);
+              : "unknown"
+        ) as any;
+        await dep.repo.saveConversation({
+          ownerId,
+          id: run.session_id,
+          title: cron.name,
+          channel: "scheduled",
+          createdAt: new Date(run.ran_at * 1000).toISOString(),
+        });
+      }
+      pending.delete(`${run.cronId}:${run.session_id}:${run.ran_at}`);
     }
-  });
+    // Archive first. A provider DELETE destroys its history; a failed archive must stop deletion.
+    await dep.repo.archive(ownerId, runs);
+    if (isFiredOneTime(cron) && runs.some((run) => run.status === "triggered"))
+      await dep.a37.removeCron(agent.instanceId, cron.id);
+  }
+  // A one-time cron may already be removed while its turn is still running.
+  for (const run of pending.values()) {
+    if (!run.session_id) continue;
+    const session = await dep.a37.session(agent.instanceId, run.session_id);
+    if (!session.active_response_id)
+      await dep.repo.archive(ownerId, [
+        {
+          ...run,
+          outcome: session.history.some(
+            (message) => message.role === "assistant",
+          )
+            ? "completed"
+            : "unknown",
+        },
+      ]);
+  }
 }
 
 export function createApp(dep: Dependencies) {

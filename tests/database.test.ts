@@ -19,12 +19,6 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
-    await readFile(
-      "supabase/migrations/202610050003_computer_maintenance.sql",
-      "utf8",
-    ),
-  );
-  await db.exec(
     `insert into auth.users values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
   );
 });
@@ -73,15 +67,15 @@ it("deduplicates queued work, serializes duplicate deliveries and resumes an exp
   expect(await enqueue()).toBe(id);
   const maintenance = (
     await db.query<{ job: { id: string; kind: string } }>(
-      `select public.enqueue_application_job('${b}','maintenance') as job`,
+      `select public.enqueue_application_job('${b}','reconcile') as job`,
     )
   ).rows[0].job;
-  expect(maintenance.kind).toBe("maintenance");
+  expect(maintenance.kind).toBe("reconcile");
   expect(maintenance.id).not.toBe(id);
   expect(
     (
       await db.query<{ job: { id: string } }>(
-        `select public.enqueue_application_job('${b}','maintenance') as job`,
+        `select public.enqueue_application_job('${b}','reconcile') as job`,
       )
     ).rows[0].job.id,
   ).toBe(maintenance.id);
