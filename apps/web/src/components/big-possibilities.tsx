@@ -35,7 +35,7 @@ const partners = [
       "Turn a pile of links into a sourced comparison or project brief.",
     ],
     technical:
-      "Agent37 provides Brave through a managed HTTP search API, with query, country, language, and freshness options. Search finds the pages; the companion’s browser reads them.",
+      "Managed Brave search uses an HTTP API, with query, country, language, and freshness options. Search finds the pages; the companion’s browser reads them.",
     availability: "Managed search on the companion’s computer",
     href: "https://www.agent37.com/docs/agents-api/managed-services#web-search",
     link: "Read about managed Brave search",
@@ -66,7 +66,7 @@ const partners = [
     color: "butter",
     title: "A little help from the specialists.",
     description:
-      "Some jobs need a tool with a particular talent. Agent37’s managed Perflo catalog offers services by the call: web scraping, company and people lookups, data enrichment, generation, and other specialist capabilities, without separate vendor subscriptions.",
+      "Some jobs need a tool with a particular talent. The managed Perflo catalog offers services by the call: web scraping, company and people lookups, data enrichment, generation, and other specialist capabilities, without separate vendor subscriptions.",
     features: [
       "Discover a service and its listed price before choosing a tool.",
       "Collect structured web data or enrich a research dataset.",
@@ -74,7 +74,7 @@ const partners = [
     ],
     technical:
       "The Perflo MCP server provides list_services, spend, pay, and get_task_result. Discovery is free. pay accepts a maxCharge checked before payment; spend chooses a vendor and reports the final charge. Tool availability depends on the installed desktop image and configuration.",
-    availability: "Agent37 capability · desktop image dependent",
+    availability: "Paid tools · desktop image dependent",
     href: "https://www.agent37.com/docs/agents-api/managed-services#paid-tools",
     link: "Read about managed Perflo tools",
   },
@@ -148,7 +148,7 @@ export function BigPossibilities() {
               </span>
             </div>
           </div>
-          <span className={styles.eyebrow}>AGENT37 + HERMES</span>
+          <span className={styles.eyebrow}>THEIR OWN CLOUD COMPUTER</span>
           <h3>A little computer. Real room to work.</h3>
           <p>
             Your companion runs on its own persistent cloud computer. It can
