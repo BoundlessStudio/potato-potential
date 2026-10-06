@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_GEFCD2BzvVNFphKvcRUyu4WqTYED",
-    "deploymentUrl": "https://potato-potential-e036m3fdc-venatio-studios.vercel.app",
-    "sourceCommit": "da0dd64fc2e43bd24cf6fe6c160775dc7dbdbbe0",
+    "deploymentId": "dpl_EAbe91XhHhDp92iQDvEdchFoBYhn",
+    "deploymentUrl": "https://potato-potential-7ffhv915i-venatio-studios.vercel.app",
+    "sourceCommit": "e43083da3142b9ba58ceef3aca74882d2e47c2bc",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -41,8 +41,9 @@
     "productionBuild": "passed",
     "typecheck": "passed",
     "unitAdapterDatabaseTests": 71,
-    "mockBrowserTests": 22,
+    "mockBrowserTests": 23,
     "githubChecks": "passed for deployed source commit",
+    "bigPossibilities": "published between Little possibilities and How it works; Agent37/Hermes computer and multi-tool work, Brave search, Composio connections, image-dependent Perflo paid tools and Inkbox channels explained with seven native technical disclosures and a project example; scheduling explanations retained in Little possibilities; keyboard interaction, no-JavaScript disclosures, reduced motion and local 320/390/768/1024/1440 layouts passed; published desktop/390/320 views and all disclosures verified with no page errors, clipped content or application mutations; beta CTA, canonical metadata, crawler content, social image and public asset secret checks passed",
     "liveTenantIsolation": "passed with temporary fixtures removed",
     "liveWorkflow": "persisted job dispatched and completed",
     "liveComputerMaintenance": "operator-only access enforced; production Vercel workflows updated a temporary computer to boundless-hermes-desktop@4 and restarted it; 540x1140 screen and retained home file confirmed; computer, customer and job fixtures removed",
