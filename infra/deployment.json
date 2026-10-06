@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_AML9FA9Sr6ub1hts6a8j7SP1Psfu",
-    "deploymentUrl": "https://potato-potential-9vz9iuxnh-venatio-studios.vercel.app",
-    "sourceCommit": "874f198398e47f54198638cea267b250c1b97c8c",
+    "deploymentId": "dpl_3MERjWCYMcWR7LGnMHVNvPediiBK",
+    "deploymentUrl": "https://potato-potential-4bbwvjpun-venatio-studios.vercel.app",
+    "sourceCommit": "2987fcd88aecc97ea96cc7d0f163d0f1b0ebbf53",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -29,12 +29,14 @@
   "email": {
     "provider": "Resend via Supabase SMTP",
     "sender": "noreply@factory.rgbknights.com",
+    "signInSubject": "Your sign-in link to Potato Potential",
+    "signInTemplate": "supabase/templates/sign-in.html",
     "invitations": "Resend API through an operator-only application endpoint",
     "host": "smtp.resend.com",
     "port": 587,
     "security": "STARTTLS"
   },
-  "validatedOn": "2026-10-05",
+  "validatedOn": "2026-10-06",
   "validation": {
     "productionBuild": "passed",
     "typecheck": "passed",
@@ -47,6 +49,7 @@
     "maintenanceQueue": "existing reconciliation outbox; customer lease covers job completion; no new database migration required",
     "customDomainHttps": "passed",
     "smtpAuthentication": "passed without sending email",
+    "authEmailTemplates": "Magic link or OTP and Confirm sign up updated in production and exact source verified after reload; native ConfirmationURL and Email placeholders retained; desktop/mobile light and dark layouts, 320px overflow, button and image-blocked fallback checks passed; public email logo returns 200 and matches prepared asset; standalone render loads live logo; Supabase embedded preview omits the remote image; recipient delivery not sent during this design update",
     "publicAssetSecretCheck": "passed",
     "ownerPhoneAndChannelAcceptance": "pending",
     "operatorSelfEnrollment": "verified operator can enroll; uninvited customers and unverified accounts rejected",
