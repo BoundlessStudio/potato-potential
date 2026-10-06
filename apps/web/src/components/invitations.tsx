@@ -8,6 +8,7 @@ type Applicant = {
   email: string;
   status: "awaiting_review" | "approved" | "accepted" | "pending" | "expired";
   accountExists: boolean;
+  canReinvite?: boolean;
   requestedAt?: string;
 };
 const labels = {
@@ -217,7 +218,9 @@ export function Invitations({
                   <td data-label="Review">
                     {["awaiting_review", "approved", "expired"].includes(
                       person.status,
-                    ) ? (
+                    ) ||
+                    (person.status === "accepted" &&
+                      (person.canReinvite ?? !person.accountExists)) ? (
                       <button
                         className="button button-primary beta-approve"
                         disabled={Boolean(sending)}

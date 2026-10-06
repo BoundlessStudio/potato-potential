@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Dependencies, Queue } from "./app";
 import { reconcileLocked } from "./app";
 import { HttpError } from "./security";
+import { reconcileSuspensionLocked, suspensionPending } from "./suspension";
 import {
   failComputerOperation,
   computerBusy,
@@ -146,7 +147,11 @@ export async function executeJobSlice(
   try {
     if (job.kind === "reconcile" || job.kind === "maintenance") {
       return await dep.repo.locked(job.owner_id, async () => {
-        const agent = await dep.repo.agent(job.owner_id);
+        let agent = await dep.repo.agent(job.owner_id);
+        if (agent && suspensionPending(agent)) {
+          await reconcileSuspensionLocked(dep, agent);
+          agent = await dep.repo.agent(job.owner_id);
+        }
         let more = false;
         if (agent && computerBusy(agent)) {
           maintenanceOperationId = agent.computerOperation!.id;

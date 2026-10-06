@@ -27,6 +27,11 @@ import { HttpError, hash, matchesHash, token, seal, unseal } from "./security";
 import { boundedSse } from "./streams";
 import { computerBusy, screenForTemplate } from "./computer-maintenance";
 import {
+  accessPaused,
+  suspensionPending,
+  reconcileSuspensionLocked,
+} from "./suspension";
+import {
   requireInvitationEmail,
   sendInvitationEmail,
   type InvitationEmail,
@@ -69,8 +74,10 @@ export async function reconcile(dep: Dependencies, ownerId: string) {
 // The job worker already holds the customer lease through job completion.
 export async function reconcileLocked(dep: Dependencies, ownerId: string) {
   const agent = await dep.repo.agent(ownerId);
+  if (agent && suspensionPending(agent))
+    await reconcileSuspensionLocked(dep, agent);
   if (!agent?.instanceId || agent.status !== "ready") return;
-  if (agent.suspended || computerBusy(agent)) return;
+  if (accessPaused(agent) || computerBusy(agent)) return;
   const archived = await dep.repo.archived(ownerId);
   const pending = new Map(
     archived
@@ -230,6 +237,7 @@ export function createApp(dep: Dependencies) {
     if (
       !agent ||
       agent.status !== "ready" ||
+      accessPaused(agent) ||
       !matchesHash(credential, agent.callbackHash)
     )
       throw new HttpError(403, "forbidden", "Callback authentication failed.");
@@ -344,7 +352,7 @@ export function createApp(dep: Dependencies) {
         "agent_not_ready",
         "Finish setting up your companion first.",
       );
-    if (agent.suspended)
+    if (accessPaused(agent))
       throw new HttpError(
         403,
         "agent_suspended",
@@ -365,17 +373,23 @@ export function createApp(dep: Dependencies) {
 
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);
-    const agent = await repo.agent(actor(req).id);
+    let agent = await repo.agent(actor(req).id);
+    if (agent && suspensionPending(agent))
+      await queue.send("reconcile", actor(req).id).catch(() => {});
     if (
       agent &&
       (["new", "provisioning", "failed", "deleting"].includes(agent.status) ||
         computerBusy(agent))
     )
       await queue.recover?.(actor(req).id).catch(() => {});
-    const challenge =
-      agent?.status === "awaiting_phone"
-        ? await lifecycle.challenge(agent)
-        : undefined;
+    let challenge: string | undefined;
+    if (agent?.status === "awaiting_phone")
+      await repo.locked(actor(req).id, async () => {
+        // Refresh after taking the lease; cleanup may have started since the first read.
+        agent = await repo.agent(actor(req).id);
+        if (agent?.status === "awaiting_phone")
+          challenge = await lifecycle.challenge(agent);
+      });
     res.json({
       profile,
       agent: agent ? publicAgent(agent, challenge) : null,
@@ -390,30 +404,35 @@ export function createApp(dep: Dependencies) {
     const { invitation } = z
       .object({ invitation: z.string().min(16).max(200).optional() })
       .parse(req.body);
-    const digest = invitation
-      ? hash(invitation)
-      : await repo.pendingInvitation(actor(req).email);
-    if (!digest)
-      throw new HttpError(
-        403,
-        "invitation_required",
-        "Your beta request is waiting for approval. Sign in after you receive an invitation.",
+    await repo.locked(actor(req).id, async () => {
+      // A tokenless retry after a lost successful response is already enrolled.
+      if (!invitation && (await repo.profile(actor(req).id))) return;
+      const digest = invitation
+        ? hash(invitation)
+        : await repo.pendingInvitation(actor(req).email);
+      if (!digest)
+        throw new HttpError(
+          403,
+          "invitation_required",
+          "Your beta request is waiting for approval. Sign in after you receive an invitation.",
+        );
+      await repo.acceptInvitation(
+        {
+          id: actor(req).id,
+          email: actor(req).email,
+          name: "",
+          agentName: "Pip",
+          avatar: "sprout",
+          color: "#7659e8",
+          phone: "",
+          timezone: "UTC",
+          personality: "",
+          preferences: "",
+          createdAt: date(),
+        },
+        digest,
       );
-    await repo.claimInvitation(actor(req).id, actor(req).email, digest);
-    if (!(await repo.profile(actor(req).id)))
-      await repo.saveProfile({
-        id: actor(req).id,
-        email: actor(req).email,
-        name: "",
-        agentName: "Pip",
-        avatar: "sprout",
-        color: "#7659e8",
-        phone: "",
-        timezone: "UTC",
-        personality: "",
-        preferences: "",
-        createdAt: date(),
-      });
+    });
     res.json({ accepted: true });
   });
   app.post("/api/onboarding", async (req, res) => {
@@ -422,7 +441,14 @@ export function createApp(dep: Dependencies) {
     if (!config.demo && !actor(req).operator) await account(req);
     await repo.locked(actor(req).id, async () => {
       const existing = await repo.agent(actor(req).id);
-      if (existing?.instanceId)
+      if (
+        existing &&
+        (existing.instanceId ||
+          existing.handle ||
+          existing.identityId ||
+          existing.completed.includes("identity") ||
+          ["deleting", "deleted"].includes(existing.status))
+      )
         throw new HttpError(
           409,
           "agent_exists",
@@ -693,7 +719,7 @@ export function createApp(dep: Dependencies) {
     const own = await ready(req, true);
     await repo.locked(own.ownerId, async () => {
       const agent = await repo.agent(own.ownerId);
-      if (!agent?.instanceId || agent.status !== "ready" || agent.suspended)
+      if (!agent?.instanceId || agent.status !== "ready" || accessPaused(agent))
         throw new HttpError(
           409,
           "agent_not_ready",
@@ -752,12 +778,26 @@ export function createApp(dep: Dependencies) {
     res.status(202).json({ queued: true });
   });
   app.post("/api/computer/takeover", async (req, res) => {
-    const agent = await ready(req);
-    if (agent.mainSessionId) {
-      const session = await a37.session(agent.instanceId, agent.mainSessionId);
-      if (session.active_response_id)
-        await a37.cancel(agent.instanceId, session.active_response_id);
-    }
+    await repo.locked(actor(req).id, async () => {
+      const agent = await ready(req);
+      if (!agent.mainSessionId) return;
+      let session = await a37.session(agent.instanceId, agent.mainSessionId);
+      if (!session.active_response_id) return;
+      await a37.cancel(agent.instanceId, session.active_response_id);
+      const deadline = Date.now() + (config.demo ? 200 : 15_000);
+      do {
+        session = await a37.session(agent.instanceId, agent.mainSessionId);
+        if (!session.active_response_id) return;
+        await new Promise((resolve) =>
+          setTimeout(resolve, config.demo ? 10 : 250),
+        );
+      } while (Date.now() < deadline);
+      throw new HttpError(
+        409,
+        "cancellation_pending",
+        "Your companion is still stopping. Try taking over again shortly.",
+      );
+    });
     res.json({ control: "customer" });
   });
 
@@ -1032,6 +1072,20 @@ export function createApp(dep: Dependencies) {
     operator(req);
     const invitations = await repo.invitations();
     const betaRequests = await repo.betaRequests();
+    const acceptedOwners = [
+      ...new Set(
+        invitations.map((row) => row.used_by || row.usedBy).filter(Boolean),
+      ),
+    ];
+    const enrolledOwners = new Set(
+      (
+        await Promise.all(
+          acceptedOwners.map(async (id) =>
+            (await repo.profile(id)) ? id : null,
+          ),
+        )
+      ).filter(Boolean),
+    );
     const accountEmails = new Set<string>(),
       accountIds = new Set<string>();
     if (invitations.length || betaRequests.length) {
@@ -1066,6 +1120,7 @@ export function createApp(dep: Dependencies) {
       {
         email: string;
         accepted: boolean;
+        enrolled: boolean;
         accountExists: boolean;
         expiresAt: string;
       }
@@ -1078,6 +1133,7 @@ export function createApp(dep: Dependencies) {
       people.set(email, {
         email,
         accepted: Boolean(usedBy) || Boolean(existing?.accepted),
+        enrolled: enrolledOwners.has(usedBy) || Boolean(existing?.enrolled),
         accountExists:
           accountEmails.has(email) ||
           accountIds.has(usedBy) ||
@@ -1089,28 +1145,36 @@ export function createApp(dep: Dependencies) {
       });
     }
     res.json({
-      invitations: [
-        ...new Set([...betaRequests.map((row) => row.email), ...people.keys()]),
-      ].map((email) => {
-        const person = people.get(email),
-          request = betaRequests.find((row) => row.email === email);
-        return {
-          email,
-          accountExists: person?.accountExists || accountEmails.has(email),
-          requestedAt: request?.createdAt,
-          approvedAt: request?.approvedAt,
-          sentAt: request?.sentAt,
-          status: person?.accepted
-            ? "accepted"
-            : request?.approvedAt && !request.sentAt
-              ? "approved"
-              : !person
-                ? "awaiting_review"
-                : Date.parse(person.expiresAt) <= Date.now()
-                  ? "expired"
-                  : "pending",
-        };
-      }),
+      invitations: await Promise.all(
+        [
+          ...new Set([
+            ...betaRequests.map((row) => row.email),
+            ...people.keys(),
+          ]),
+        ].map(async (email) => {
+          const person = people.get(email),
+            request = betaRequests.find((row) => row.email === email);
+          return {
+            email,
+            accountExists: person?.accountExists || accountEmails.has(email),
+            // A new Auth account with this email is not the deleted customer's enrollment.
+            canReinvite: Boolean(person?.accepted && !person.enrolled),
+            requestedAt: request?.createdAt,
+            approvedAt: request?.approvedAt,
+            sentAt: request?.sentAt,
+            status:
+              person?.accepted && !(await repo.pendingInvitation(email))
+                ? "accepted"
+                : request?.approvedAt && !request.sentAt
+                  ? "approved"
+                  : !person
+                    ? "awaiting_review"
+                    : Date.parse(person.expiresAt) <= Date.now()
+                      ? "expired"
+                      : "pending",
+          };
+        }),
+      ),
     });
   });
   app.post("/api/operator/beta", async (req, res) => {
@@ -1131,17 +1195,40 @@ export function createApp(dep: Dependencies) {
       const previous = (await repo.invitations()).filter(
         (row) => row.email === email,
       );
-      if (previous.some((row) => row.used_by || row.usedBy))
+      const acceptedOwners = previous
+        .map((row) => row.used_by || row.usedBy)
+        .filter(Boolean);
+      const activeCustomers = await Promise.all(
+        acceptedOwners.map((id) => repo.profile(id)),
+      );
+      if (activeCustomers.some(Boolean))
         throw new HttpError(
           409,
           "invitation_accepted",
           "This email has already accepted an invitation. They can use the sign-in page.",
         );
-      if (request.sentAt && Date.parse(request.expiresAt || "") > Date.now())
+      const key = config.demo ? "a".repeat(64) : config.encryptionKey;
+      const consumed =
+        !!request.invitationBox &&
+        previous.some(
+          (row) =>
+            row.token_hash === hash(unseal(request.invitationBox!, key)) &&
+            (row.used_by || row.usedBy),
+        );
+      if (
+        request.sentAt &&
+        !consumed &&
+        Date.parse(request.expiresAt || "") > Date.now()
+      )
         return;
+      if (consumed) {
+        // A new approval creates a new token; historical tokens remain consumed.
+        request.invitationBox = undefined;
+        request.approvedAt = undefined;
+        request.approvedBy = undefined;
+      }
       request.approvedAt ||= date();
       request.approvedBy ||= actor(req).id;
-      const key = config.demo ? "a".repeat(64) : config.encryptionKey;
       if (
         !request.invitationBox ||
         Date.parse(request.expiresAt || "") <= Date.now()
@@ -1170,7 +1257,11 @@ export function createApp(dep: Dependencies) {
     const agent = await repo.agent(ownerId);
     if (!agent) throw new HttpError(404, "not_found", "Customer not found.");
     await queue.send(
-      agent.status === "deleting" ? "cleanup" : "provision",
+      agent.status === "deleting"
+        ? "cleanup"
+        : suspensionPending(agent)
+          ? "reconcile"
+          : "provision",
       ownerId,
     );
     res.status(202).json({ queued: true });
@@ -1209,16 +1300,22 @@ export function createApp(dep: Dependencies) {
       const agent = await repo.agent(ownerId);
       if (!agent?.instanceId)
         throw new HttpError(404, "not_found", "Computer not created yet.");
-      if (suspended) {
-        await a37.stop(agent.instanceId);
-        agent.suspended = true;
-        await repo.saveAgent(agent);
-      } else {
-        await a37.start(agent.instanceId);
-        await lifecycle.healthy(agent.instanceId);
-        agent.suspended = false;
-        await repo.saveAgent(agent);
-      }
+      if (["deleting", "deleted"].includes(agent.status))
+        throw new HttpError(
+          409,
+          "agent_deleting",
+          "This companion is being deleted.",
+        );
+      agent.suspensionOperation = {
+        id: randomUUID(),
+        suspended,
+        phase: "pending",
+        requestedAt: date(),
+      };
+      await repo.saveAgent(agent);
+      // The outbox can reconcile even if this request disappears during the provider call.
+      await queue.send("reconcile", ownerId);
+      await reconcileSuspensionLocked(dep, agent);
     });
     res.json({ saved: true });
   });

@@ -1539,7 +1539,13 @@ export function Operator(feedback: Feedback) {
               <span
                 className={`status-tag ${agent?.status === "ready" ? "completed" : "needs_you"}`}
               >
-                {agent?.status || "Awaiting onboarding"}
+                {agent?.suspensionOperation?.phase === "pending"
+                  ? agent.suspensionOperation.suspended
+                    ? "Pausing"
+                    : "Resuming"
+                  : agent?.suspended
+                    ? "Paused"
+                    : agent?.status || "Awaiting onboarding"}
               </span>
               {agent?.error && <p className="error-inline">{agent.error}</p>}
             </div>
@@ -1568,7 +1574,11 @@ export function Operator(feedback: Feedback) {
             <div className="inline-actions">
               <button
                 className="button button-secondary"
-                disabled={!agent?.instanceId || agent.status !== "ready"}
+                disabled={
+                  !agent?.instanceId ||
+                  agent.status !== "ready" ||
+                  agent.suspensionOperation?.phase === "pending"
+                }
                 onClick={async () => {
                   try {
                     await api(`/operator/${profile.id}/suspension`, "PUT", {
@@ -1579,9 +1589,10 @@ export function Operator(feedback: Feedback) {
                         ? "Companion resumed."
                         : "Companion paused.",
                     );
-                    void load();
                   } catch (error) {
                     feedback.onError(errorText(error));
+                  } finally {
+                    void load();
                   }
                 }}
               >

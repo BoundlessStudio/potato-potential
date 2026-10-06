@@ -1,6 +1,7 @@
 import type { Agent } from "@boundless/shared";
 import type { Dependencies } from "./app";
 import { HttpError } from "./security";
+import { accessPaused } from "./suspension";
 
 export const bootCommand = `node -e 'const fs=require("node:fs");const s=fs.statSync("/proc/1");const t=fs.readFileSync("/proc/1/stat","utf8").split(") ").pop().split(" ")[19];console.log(s.ctimeMs+":"+s.mtimeMs+":"+t)'`;
 export const screenCommand = "DISPLAY=:99 /usr/bin/xdpyinfo | grep dimensions";
@@ -70,7 +71,7 @@ export async function maintainComputerLocked(
     await save();
     return false;
   };
-  if (agent.suspended)
+  if (accessPaused(agent))
     return fail("The computer is paused. Resume it before retrying.");
   if (op.phase === "queued") {
     if (agent.mainSessionId) {

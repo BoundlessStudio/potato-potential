@@ -1,6 +1,60 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent37, Inkbox } from "../services/control-plane/src/providers";
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+it.each(["health", "exec", "start"])(
+  "allows a two-minute cold wake for Agent37 %s and still bounds a hung request",
+  async (operation) => {
+    vi.useFakeTimers();
+    let delay = 120_000;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, init) =>
+          new Promise<Response>((resolve, reject) => {
+            const timer = setTimeout(
+              () =>
+                resolve(
+                  Response.json({
+                    healthy: true,
+                    stdout: "done",
+                    stderr: "",
+                    exit_code: 0,
+                  }),
+                ),
+              delay,
+            );
+            init.signal.addEventListener("abort", () => {
+              clearTimeout(timer);
+              reject(new DOMException("Aborted", "AbortError"));
+            });
+          }),
+      ),
+    );
+    const provider = new Agent37("test-admin-key");
+    const invoke = () =>
+      operation === "health"
+        ? provider.healthy("abcdefghij")
+        : operation === "exec"
+          ? provider.exec("abcdefghij", "true")
+          : provider.start("abcdefghij");
+    const outcome = invoke().then(
+      () => "completed",
+      (error) => error.name,
+    );
+    await vi.advanceTimersByTimeAsync(120_001);
+    expect(await outcome).toBe("completed");
+    delay = 250_000;
+    const hung = invoke().then(
+      () => "completed",
+      (error) => error.name,
+    );
+    await vi.advanceTimersByTimeAsync(200_001);
+    expect(await hung).toBe("AbortError");
+  },
+);
 it("uses hosting auth, managed cap contract, and an owner desktop token lasting 60 seconds", async () => {
   const fetch = vi
     .fn()

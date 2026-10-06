@@ -281,7 +281,7 @@ it("reports acceptance separately from current Auth accounts and groups repeated
   expect((await response.json()).invitations).toEqual([
     expect.objectContaining({
       email: customerEmail,
-      status: "accepted",
+      status: "pending",
       accountExists: false,
     }),
     expect.objectContaining({
@@ -295,6 +295,45 @@ it("reports acceptance separately from current Auth accounts and groups repeated
       accountExists: false,
     }),
   ]);
+});
+it("lets operators re-invite a deleted customer even when a new Auth account uses the same email", async () => {
+  const oldOwner = randomUUID();
+  await repo.createInvitation(
+    customerEmail,
+    hash("deleted-owner-invite"),
+    new Date(Date.now() + 86400000).toISOString(),
+  );
+  await repo.claimInvitation(
+    oldOwner,
+    customerEmail,
+    hash("deleted-owner-invite"),
+  );
+  const listed = await (
+    await call("/operator/invitations", "verified-owner")
+  ).json();
+  expect(listed.invitations[0]).toMatchObject({
+    email: customerEmail,
+    status: "accepted",
+    accountExists: true,
+    canReinvite: true,
+  });
+  expect(
+    (
+      await call("/operator/invitations/send", "verified-owner", {
+        email: customerEmail,
+      })
+    ).status,
+  ).toBe(201);
+  expect(
+    (await call("/invitations/accept", "verified-customer", {})).status,
+  ).toBe(200);
+  expect(
+    (
+      await call("/operator/invitations/send", "verified-owner", {
+        email: customerEmail,
+      })
+    ).status,
+  ).toBe(409);
 });
 it("looks past the first Auth page and fails clearly if account lookup is unavailable", async () => {
   await repo.createInvitation(

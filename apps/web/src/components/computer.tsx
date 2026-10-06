@@ -19,9 +19,18 @@ export function Computer({
   const target = useRef<HTMLDivElement>(null);
   const rfb = useRef<any>(null);
   const [control, setControl] = useState(false);
+  const [changingControl, setChangingControl] = useState(false);
+  const changing = useRef(false);
+  const mounted = useRef(false);
   const [state, setState] = useState("Connecting");
   const [retry, setRetry] = useState(0);
   const [screen, setScreen] = useState({ width: 540, height: 1140 });
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   useEffect(() => {
     if (demo) {
       setState("Preview computer");
@@ -97,10 +106,20 @@ export function Computer({
     };
   }, [retry, onError]);
   async function toggle() {
+    if (changing.current) return;
+    changing.current = true;
+    setChangingControl(true);
+    const connection = rfb.current;
     try {
       if (!control) {
         await api("/computer/takeover", "POST");
-        if (rfb.current) rfb.current.viewOnly = false;
+        if (
+          !mounted.current ||
+          document.hidden ||
+          (!demo && (!connection || rfb.current !== connection))
+        )
+          return;
+        if (connection) connection.viewOnly = false;
         setControl(true);
       } else {
         if (rfb.current) rfb.current.viewOnly = true;
@@ -108,9 +127,13 @@ export function Computer({
         onReturn();
       }
     } catch (error) {
-      onError(
-        error instanceof Error ? error.message : "Could not change control.",
-      );
+      if (mounted.current)
+        onError(
+          error instanceof Error ? error.message : "Could not change control.",
+        );
+    } finally {
+      changing.current = false;
+      if (mounted.current) setChangingControl(false);
     }
   }
   return (
@@ -175,10 +198,14 @@ export function Computer({
       <button
         className={`button ${control ? "button-primary" : "button-secondary"} computer-control`}
         onClick={toggle}
-        disabled={!demo && !rfb.current}
+        disabled={changingControl || (!demo && !rfb.current)}
       >
         {control ? <Eye size={16} /> : <MousePointer2 size={16} />}{" "}
-        {control ? "Return control" : "Take over"}
+        {changingControl
+          ? "Waiting for companion…"
+          : control
+            ? "Return control"
+            : "Take over"}
       </button>
       <p className="fine-print">
         {control

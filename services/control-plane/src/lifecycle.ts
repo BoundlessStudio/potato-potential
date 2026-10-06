@@ -4,6 +4,7 @@ import type { Config } from "./config";
 import type { Repository } from "./repository";
 import type { AgentProvider, InkboxProvider } from "./providers";
 import { HttpError, hash, seal, shellQuote, token, unseal } from "./security";
+import { accessPaused } from "./suspension";
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const sdkHook =
@@ -52,6 +53,7 @@ export class Lifecycle {
   private key() {
     return this.config.demo ? "a".repeat(64) : this.config.encryptionKey;
   }
+  /** Mutates state; the caller must hold the owner's lease and use a fresh row. */
   async challenge(agent: Agent): Promise<string> {
     if (
       !agent.phoneChallengeBox ||
@@ -108,6 +110,12 @@ export class Lifecycle {
       if (!profile) throw new HttpError(404, "not_found", "Account not found.");
       const agent = await this.newAgent(ownerId);
       if (agent.status === "deleting" || agent.status === "deleted") return;
+      if (accessPaused(agent))
+        throw new HttpError(
+          409,
+          "agent_suspended",
+          "Resume this companion before continuing setup.",
+        );
       if (agent.completed.includes("ready")) return;
       agent.status = "provisioning";
       agent.error = undefined;
@@ -386,7 +394,9 @@ export class Lifecycle {
       "touch ~/.hermes/.env && sed -i '/^INKBOX_PUBLIC_URL=/d' ~/.hermes/.env",
       `printf '%s\\n' ${shellQuote(`INKBOX_PUBLIC_URL=${agent.webhookUrl}`)} >> ~/.hermes/.env`,
       "hermes config set display.platforms.inkbox.show_reasoning false >/dev/null",
-      `printf '%s' ${shellQuote(unseal(agent.runtimeKeyBox, this.key()))} | hermes inkbox bootstrap --identity ${shellQuote(agent.handle!)} --api-key-stdin --voice-ai --rotate-signing-key`,
+      // Fresh identities create a signing key; retries reuse the profile's saved key.
+      // If a remote key exists without its local copy, native recovery requires a human.
+      `printf '%s' ${shellQuote(unseal(agent.runtimeKeyBox, this.key()))} | hermes inkbox bootstrap --identity ${shellQuote(agent.handle!)} --api-key-stdin --voice-ai`,
     ].join("\n");
     const result = await this.a37.exec(agent.instanceId!, script);
     let outcome: { status?: string; error?: string; human_actions?: string[] } =

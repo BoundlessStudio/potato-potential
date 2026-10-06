@@ -20,10 +20,11 @@ export class ProviderError extends HttpError {
 export async function checkedFetch(
   url: string,
   init: RequestInit = {},
+  timeoutMs = 90_000,
 ): Promise<Response> {
   const controller = new AbortController();
   // Keep provider calls inside Vercel's invocation budget. A lost reply is reconciled on retry.
-  const timer = setTimeout(() => controller.abort(), 90_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res: Response;
   try {
     res = await fetch(url, {
@@ -106,15 +107,19 @@ export interface AgentProvider {
 }
 export class Agent37 implements AgentProvider {
   constructor(private key: string) {}
-  private host(path: string, init: RequestInit = {}) {
-    return checkedFetch(`https://api.agent37.com/v1${path}`, {
-      ...init,
-      headers: {
-        Authorization: `Bearer ${this.key}`,
-        "Content-Type": "application/json",
-        ...init.headers,
+  private host(path: string, init: RequestInit = {}, timeoutMs = 200_000) {
+    return checkedFetch(
+      `https://api.agent37.com/v1${path}`,
+      {
+        ...init,
+        headers: {
+          Authorization: `Bearer ${this.key}`,
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
       },
-    });
+      timeoutMs,
+    );
   }
   private agent(id: string, path: string, init: RequestInit = {}) {
     if (!/^[a-z0-9]{10}$/.test(id))
@@ -123,10 +128,15 @@ export class Agent37 implements AgentProvider {
         "invalid_instance",
         "Invalid instance identifier.",
       );
-    return checkedFetch(`https://${id}.agent37.app/v1${path}`, {
-      ...init,
-      headers: { "X-Agent37-Key": this.key, ...init.headers },
-    });
+    // A cold-storage wake takes about two minutes; allow the documented 3-minute minimum.
+    return checkedFetch(
+      `https://${id}.agent37.app/v1${path}`,
+      {
+        ...init,
+        headers: { "X-Agent37-Key": this.key, ...init.headers },
+      },
+      200_000,
+    );
   }
   private async json(res: Promise<Response>) {
     const response = await res;

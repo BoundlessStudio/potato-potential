@@ -1,4 +1,83 @@
 import { expect, test } from "@playwright/test";
+test("keeps takeover read-only while cancellation is pending and after a failed handoff", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let fail = true;
+  await page.route("**/api/computer/takeover", async (route) => {
+    await pending;
+    await route.fulfill(
+      fail
+        ? {
+            status: 409,
+            json: {
+              error: {
+                code: "cancellation_pending",
+                message: "Companion is still stopping.",
+              },
+            },
+          }
+        : { status: 200, json: { control: "customer" } },
+    );
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: /computer/i })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Take over", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Waiting for companion…" }),
+  ).toBeDisabled();
+  await expect(page.getByText("You have control")).toHaveCount(0);
+  release();
+  await expect(
+    page.getByText("Companion is still stopping.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Take over", exact: true }),
+  ).toBeEnabled();
+  await expect(page.getByText("You have control")).toHaveCount(0);
+  fail = false;
+  await page.getByRole("button", { name: "Take over", exact: true }).click();
+  await expect(page.getByText("You have control")).toBeVisible();
+});
+
+test("does not grant control to a reopened computer after the original panel closes", async ({
+  page,
+}) => {
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/computer/takeover", async (route) => {
+    await pending;
+    await route.fulfill({ status: 200, json: { control: "customer" } });
+  });
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: /computer/i })
+    .first()
+    .click();
+  await page.getByRole("button", { name: "Take over", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Waiting for companion…" }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "Close computer" }).click();
+  await page
+    .getByRole("button", { name: /computer/i })
+    .first()
+    .click();
+  release();
+  await expect(
+    page.getByRole("button", { name: "Take over", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("You have control")).toHaveCount(0);
+});
+
 test("formats local and pasted international numbers and blocks incomplete input", async ({
   page,
 }) => {

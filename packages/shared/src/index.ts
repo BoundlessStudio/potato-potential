@@ -83,6 +83,12 @@ export type Agent = {
   budgetMicros: number;
   mainSessionId?: string;
   suspended?: boolean;
+  suspensionOperation?: {
+    id: string;
+    suspended: boolean;
+    phase: "pending" | "completed";
+    requestedAt: string;
+  };
   computerOperation?: {
     id: string;
     action: "restart" | "update";

@@ -52,6 +52,12 @@ test("operator reviews beta requests and approves sending separately from adding
     },
     { email: "invited@example.com", status: "pending", accountExists: false },
     { email: "former@example.com", status: "accepted", accountExists: false },
+    {
+      email: "reenrolling@example.com",
+      status: "accepted",
+      accountExists: true,
+      canReinvite: true,
+    },
     { email: "expired@example.com", status: "expired", accountExists: false },
   ];
   await page.route("**/api/operator/invitations", (route) =>
@@ -107,6 +113,32 @@ test("operator reviews beta requests and approves sending separately from adding
   await expect(
     page.getByRole("row").filter({ hasText: "former@example.com" }),
   ).toContainText("Not created");
+  await page
+    .getByRole("button", {
+      name: "Send invitation to former@example.com",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "former@example.com" }),
+  ).toContainText("Invited");
+  expect(sent).toEqual({ email: "former@example.com" });
+  await page
+    .getByRole("button", {
+      name: "Send invitation to reenrolling@example.com",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "reenrolling@example.com" }),
+  ).toContainText("Invited");
+  expect(sent).toEqual({ email: "reenrolling@example.com" });
+  await expect(
+    page
+      .getByRole("row")
+      .filter({ hasText: "joined@example.com" })
+      .getByRole("button"),
+  ).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Suspend" })).toHaveCount(0);
   await page.screenshot({
     path: ".cache/beta-review-desktop.png",

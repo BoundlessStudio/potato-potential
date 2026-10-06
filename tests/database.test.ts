@@ -25,6 +25,12 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
+    await readFile(
+      "supabase/migrations/202610060001_atomic_invitation_acceptance.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
     `insert into auth.users values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
   );
 });
@@ -176,8 +182,88 @@ it("claims invitations once for the verified email and never reopens them on del
   ).rejects.toThrow("invalid invitation");
   await db.exec(`delete from auth.users where id='${a}'`);
   expect(
-    (await db.query("select used_by from public.invitations")).rows[0],
+    (
+      await db.query(
+        "select used_by from public.invitations where token_hash='digest'",
+      )
+    ).rows[0],
   ).toEqual({ used_by: a });
+});
+it("atomically enrolls customers and consumes invitations, rolls back failures, and restricts the RPC", async () => {
+  const owner = "aaaa1111-1111-4111-8111-111111111111";
+  const profile = JSON.stringify({
+    id: owner,
+    email: "atomic@example.com",
+    name: "Original",
+  });
+  const accept = `select public.accept_invitation('${owner}','atomic@example.com','atomic','${profile}'::jsonb)`;
+  await db.exec(
+    "insert into public.invitations(email,token_hash,expires_at) values ('atomic@example.com','atomic',now()+interval '1 day')",
+  );
+  await db.exec("set role anon");
+  await expect(db.exec(accept)).rejects.toThrow("permission denied");
+  await db.exec("reset role; set role authenticated");
+  await expect(db.exec(accept)).rejects.toThrow("permission denied");
+  await db.exec("reset role; set role service_role");
+  // Auth account is absent: inserting the customer fails and must roll back token use.
+  await expect(db.exec(accept)).rejects.toThrow("foreign key");
+  await db.exec("reset role");
+  expect(
+    (
+      await db.query(
+        "select used_by from public.invitations where token_hash='atomic'",
+      )
+    ).rows[0],
+  ).toEqual({ used_by: null });
+  await db.exec(`insert into auth.users values('${owner}')`);
+  await db.exec("set role service_role");
+  await db.exec(accept);
+  await db.exec(accept.replace('"Original"', '"Overwrite"'));
+  await db.exec("reset role");
+  expect(
+    (
+      await db.query<{ profile: { name: string } }>(
+        `select profile from public.customers where id='${owner}'`,
+      )
+    ).rows[0].profile.name,
+  ).toBe("Original");
+  expect(
+    (
+      await db.query(
+        "select used_by from public.invitations where token_hash='atomic'",
+      )
+    ).rows[0],
+  ).toEqual({ used_by: owner });
+  await expect(db.exec(accept.replace(owner, b))).rejects.toThrow(
+    "invalid invitation",
+  );
+  await db.exec(`delete from auth.users where id='${owner}'`);
+  await expect(db.exec(accept.replaceAll(owner, b))).rejects.toThrow(
+    "invalid invitation",
+  );
+});
+
+it("rejects expired and mismatched enrollment payloads without consuming the token", async () => {
+  await db.exec(
+    "insert into public.invitations(email,token_hash,expires_at) values ('b@example.com','expired-atomic',now()-interval '1 day'),('b@example.com','mismatch-atomic',now()+interval '1 day')",
+  );
+  await expect(
+    db.exec(
+      `select public.accept_invitation('${b}','b@example.com','expired-atomic','{"id":"${b}","email":"b@example.com"}')`,
+    ),
+  ).rejects.toThrow("invalid invitation");
+  await expect(
+    db.exec(
+      `select public.accept_invitation('${b}','b@example.com','mismatch-atomic','{"id":"${a}","email":"b@example.com"}')`,
+    ),
+  ).rejects.toThrow("invalid invitation");
+  expect(
+    (
+      await db.query(
+        "select used_by from public.invitations where token_hash in ('expired-atomic','mismatch-atomic')",
+      )
+    ).rows,
+  ).toEqual([{ used_by: null }, { used_by: null }]);
 });
 it("leases serialize work and only the owning token can release them", async () => {
   const first = "66666666-6666-4666-8666-666666666666",

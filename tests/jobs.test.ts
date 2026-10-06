@@ -44,18 +44,67 @@ async function requestUpdate() {
 }
 function jobQueue(finish = vi.fn().mockResolvedValue(undefined), failures = 0) {
   return {
-    claim: vi
-      .fn()
-      .mockResolvedValue({
-        id: jobId,
-        owner_id: owner,
-        kind: "reconcile",
-        status: "running",
-        failures,
-      }),
+    claim: vi.fn().mockResolvedValue({
+      id: jobId,
+      owner_id: owner,
+      kind: "reconcile",
+      status: "running",
+      failures,
+    }),
     finish,
   } as unknown as SupabaseJobs;
 }
+
+it("recovers saved pause intent after an interrupted provider call through the durable outbox", async () => {
+  const agent = (await repo.agent(owner))!;
+  agent.suspensionOperation = {
+    id: randomUUID(),
+    suspended: true,
+    phase: "pending",
+    requestedAt: new Date().toISOString(),
+  };
+  await repo.saveAgent(agent);
+  const stop = vi
+    .spyOn(a37, "stop")
+    .mockRejectedValueOnce(
+      new ProviderError(503, "unavailable", "Unavailable"),
+    );
+  const crons = vi.spyOn(a37, "crons");
+  const jobs = jobQueue();
+  expect(await executeJobSlice(dep, jobs, jobId, worker)).toBe("retry");
+  expect((await repo.agent(owner))!.suspensionOperation?.phase).toBe("pending");
+  expect(await executeJobSlice(dep, jobs, jobId, worker)).toBe("complete");
+  expect((await repo.agent(owner))!.suspended).toBe(true);
+  expect(crons).not.toHaveBeenCalled();
+  expect(stop).toHaveBeenCalledTimes(2);
+});
+
+it("keeps a recovered resume closed until healthy and avoids repeating an already applied start", async () => {
+  const agent = (await repo.agent(owner))!;
+  await a37.stop(agent.instanceId!);
+  agent.suspended = true;
+  agent.suspensionOperation = {
+    id: randomUUID(),
+    suspended: false,
+    phase: "pending",
+    requestedAt: new Date().toISOString(),
+  };
+  await repo.saveAgent(agent);
+  const healthy = vi
+    .fn()
+    .mockRejectedValueOnce(new ProviderError(503, "booting", "Still booting"))
+    .mockResolvedValue(undefined);
+  dep.lifecycle = { healthy } as unknown as Dependencies["lifecycle"];
+  const start = vi.spyOn(a37, "start");
+  const jobs = jobQueue();
+  expect(await executeJobSlice(dep, jobs, jobId, worker)).toBe("retry");
+  expect((await repo.agent(owner))!.suspended).toBe(true);
+  expect((await repo.agent(owner))!.suspensionOperation?.phase).toBe("pending");
+  expect(await executeJobSlice(dep, jobs, jobId, worker)).toBe("complete");
+  expect(start).toHaveBeenCalledTimes(1);
+  expect(healthy).toHaveBeenCalledTimes(2);
+  expect((await repo.agent(owner))!.suspended).toBe(false);
+});
 
 it("maps maintenance to the reconciliation kind supported by the deployed database", async () => {
   const rpc = vi.fn().mockResolvedValue({ data: { id: jobId }, error: null });

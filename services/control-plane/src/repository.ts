@@ -23,6 +23,7 @@ export type BetaRequest = {
 export interface Repository {
   profile(ownerId: string): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<void>;
+  acceptInvitation(profile: Profile, digest: string): Promise<void>;
   agent(ownerId: string): Promise<Agent | null>;
   saveAgent(agent: Agent): Promise<void>;
   byInstance(id: string): Promise<Agent | null>;
@@ -109,12 +110,36 @@ export class MemoryRepository implements Repository {
       );
     invitation.usedBy = ownerId;
   }
+  async acceptInvitation(profile: Profile, digest: string) {
+    return this.locked(`invitation:${digest}`, async () => {
+      // Match the SQL transaction: publish token use only after the profile succeeds.
+      const invitation = this.invites.get(digest);
+      const enrolled = this.profiles.has(profile.id);
+      if (
+        !invitation ||
+        invitation.email !== profile.email.toLowerCase() ||
+        (invitation.usedBy && invitation.usedBy !== profile.id) ||
+        (!(Date.parse(invitation.expiresAt) > Date.now()) &&
+          !(invitation.usedBy === profile.id && enrolled))
+      )
+        throw new HttpError(
+          403,
+          "invalid_invitation",
+          "This invitation is invalid, expired, or belongs to another email.",
+        );
+      if (!enrolled) await this.saveProfile(profile);
+      invitation.usedBy = profile.id;
+    });
+  }
   async createInvitation(email: string, digest: string, expiresAt: string) {
     if (!this.invites.has(digest))
       this.invites.set(digest, { email: email.toLowerCase(), expiresAt });
   }
   async invitations() {
-    return [...this.invites.values()];
+    return [...this.invites.entries()].map(([token_hash, row]) => ({
+      ...row,
+      token_hash,
+    }));
   }
   async pendingInvitation(email: string) {
     return (
@@ -305,6 +330,21 @@ export class SupabaseRepository implements Repository {
         "This invitation is invalid, expired, or belongs to another email.",
       );
   }
+  async acceptInvitation(profile: Profile, digest: string) {
+    const result = await this.client.rpc("accept_invitation", {
+      p_owner_id: profile.id,
+      p_email: profile.email.toLowerCase(),
+      p_hash: digest,
+      p_profile: profile,
+    });
+    if (result.error?.code === "P0001")
+      throw new HttpError(
+        403,
+        "invalid_invitation",
+        "This invitation is invalid, expired, or belongs to another email.",
+      );
+    this.check(result);
+  }
   async createInvitation(email: string, digest: string, expiresAt: string) {
     this.check(
       await this.client.from("invitations").upsert(
@@ -322,7 +362,7 @@ export class SupabaseRepository implements Repository {
       this.check(
         await this.client
           .from("invitations")
-          .select("id,email,expires_at,used_by,created_at")
+          .select("id,email,expires_at,used_by,created_at,token_hash")
           .order("created_at", { ascending: false }),
       ) || []
     );
