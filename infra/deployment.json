@@ -5,8 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_m3sWtbpPwxPTGwmKttvqwAeWAZ5t",
-    "deploymentUrl": "https://potato-potential-h2rs7sv67-venatio-studios.vercel.app",
+    "deploymentId": "dpl_7vJNs1eQcZDnJCP3o1WNk5awdfV2",
+    "deploymentUrl": "https://potato-potential-pxn7mnmq2-venatio-studios.vercel.app",
+    "sourceCommit": "d55f3c6083578e60e68a627b26479d50d4cd9004",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -37,10 +38,13 @@
   "validation": {
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 56,
-    "mockBrowserTests": 16,
+    "unitAdapterDatabaseTests": 66,
+    "mockBrowserTests": 18,
+    "githubChecks": "passed for deployed source commit",
     "liveTenantIsolation": "passed with temporary fixtures removed",
     "liveWorkflow": "persisted job dispatched and completed",
+    "liveComputerMaintenance": "operator-only access enforced; production Vercel workflows updated a temporary computer to boundless-hermes-desktop@4 and restarted it; 540x1140 screen and retained home file confirmed; computer, customer and job fixtures removed",
+    "maintenanceQueue": "existing reconciliation outbox; customer lease covers job completion; no new database migration required",
     "customDomainHttps": "passed",
     "smtpAuthentication": "passed without sending email",
     "publicAssetSecretCheck": "passed",
