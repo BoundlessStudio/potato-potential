@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+.cache
+.git
+node_modules
+**/node_modules
+**/.next
+**/dist
+**/*.tsbuildinfo
+.workflow-data
+**/.workflow-data
+test-results
+playwright-report
+coverage
+tests

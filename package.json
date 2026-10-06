@@ -1,0 +1,42 @@
+{
+  "name": "boundless-companions",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/web",
+    "services/control-plane",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm run dev -w @boundless/control-plane\" \"npm run dev -w @boundless/web\"",
+    "demo": "cross-env DEMO_MODE=true NEXT_PUBLIC_DEMO_MODE=true npm run dev",
+    "build": "npm run build -w @boundless/control-plane && npm run build -w @boundless/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "release:agent": "npx --yes agent37@0.4.0 templates build ./infra/desktop --name boundless-hermes-desktop --default-port 3737",
+    "format": "prettier --write apps/web/src services/control-plane/src packages/shared/src tests *.ts *.json"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.2.0",
+    "cross-env": "^10.1.0",
+    "esbuild": "^0.28.2",
+    "prettier": "^3.9.9",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "overrides": {
+    "esbuild": "$esbuild",
+    "devalue": "5.9.4",
+    "nanoid@>=4.0.0": "5.1.16"
+  },
+  "dependencies": {
+    "workflow": "^5.0.1"
+  }
+}

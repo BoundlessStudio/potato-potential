@@ -1,0 +1,30 @@
+{
+  "name": "@boundless/control-plane",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./app": "./src/app.ts",
+    "./runtime": "./src/runtime.ts",
+    "./jobs": "./src/jobs.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "esbuild src/index.ts --bundle --packages=external --platform=node --target=node24 --format=esm --outfile=dist/index.js",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@boundless/shared": "*",
+    "@supabase/supabase-js": "^2.95.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.0",
+    "express": "^5.2.0",
+    "express-rate-limit": "^8.2.0",
+    "zod": "^4.3.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "tsx": "^4.21.0"
+  }
+}

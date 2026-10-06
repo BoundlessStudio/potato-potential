@@ -1,0 +1,21 @@
+{
+  "template": "boundless-hermes-desktop@4",
+  "build_id": "tb_4d1ec16e887d0ee5ab56",
+  "image_digest": "sha256:ad306200c8013aeac6301eb7f029165d8e0e3cf7e9c0ba9e9bd1f4e4bf40331e",
+  "hermes_base": "ghcr.io/agent37-platform/hermes:2026.10.05a",
+  "inkbox_plugin_commit": "753a623bee16f0f56299a6465ddf4fd902b6c38b",
+  "dots_recipe_commit": "b9f29f2ea7d4092303b095ce2cc4445059acd828",
+  "screen": { "width": 540, "height": 1140 },
+  "validation": {
+    "liveMaintenance": "passed",
+    "lostUpdateReply": "reconciled without repeating provider update",
+    "restart": "passed with template pin retained",
+    "homeFilePersistence": "passed after update and restart",
+    "browserViewport": { "width": 540, "height": 1034 },
+    "noVnc": "portrait framebuffer, rendered pixels, view/control switching and disconnection passed",
+    "inkboxPlugin": "pinned plugin activation and SDK imports passed",
+    "nativeFiles": "creation, edits and stale modification-time rejection passed",
+    "temporaryComputer": "removed",
+    "validatedOn": "2026-10-05"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "functions": {
+    "src/pages/api/[...path].ts": { "maxDuration": 300 },
+    "src/app/.well-known/workflow/v1/flow/route.js": { "maxDuration": 300 }
+  },
+  "rewrites": [{ "source": "/health", "destination": "/api/health" }],
+  "crons": [{ "path": "/api/internal/maintenance", "schedule": "17 6 * * *" }]
+}

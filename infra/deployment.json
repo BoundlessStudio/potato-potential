@@ -1,0 +1,58 @@
+{
+  "projectName": "potato-potential",
+  "productionOrigin": "https://potato-potential.rgbknights.com",
+  "fallbackOrigin": "https://potato-potential.vercel.app",
+  "vercel": {
+    "team": "venatio-studios",
+    "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
+    "deploymentId": "dpl_m3sWtbpPwxPTGwmKttvqwAeWAZ5t",
+    "deploymentUrl": "https://potato-potential-h2rs7sv67-venatio-studios.vercel.app",
+    "rootDirectory": "apps/web",
+    "nodeVersion": "24.x",
+    "controlRuntime": "workflow"
+  },
+  "supabase": {
+    "projectRef": "cbipuhnmxyrwfiuwfiou",
+    "region": "us-east-2",
+    "migrations": ["202610050001", "202610050002"],
+    "siteUrl": "https://potato-potential.rgbknights.com",
+    "redirectUrl": "https://potato-potential.rgbknights.com/auth/callback"
+  },
+  "dns": {
+    "provider": "Cloudflare",
+    "type": "CNAME",
+    "name": "potato-potential.rgbknights.com",
+    "target": "e6cacabb489fa852.vercel-dns-017.com",
+    "proxied": false
+  },
+  "email": {
+    "provider": "Resend via Supabase SMTP",
+    "sender": "noreply@factory.rgbknights.com",
+    "invitations": "Resend API through an operator-only application endpoint",
+    "host": "smtp.resend.com",
+    "port": 587,
+    "security": "STARTTLS"
+  },
+  "validatedOn": "2026-10-05",
+  "validation": {
+    "productionBuild": "passed",
+    "typecheck": "passed",
+    "unitAdapterDatabaseTests": 56,
+    "mockBrowserTests": 16,
+    "liveTenantIsolation": "passed with temporary fixtures removed",
+    "liveWorkflow": "persisted job dispatched and completed",
+    "customDomainHttps": "passed",
+    "smtpAuthentication": "passed without sending email",
+    "publicAssetSecretCheck": "passed",
+    "ownerPhoneAndChannelAcceptance": "pending",
+    "operatorSelfEnrollment": "verified operator can enroll; uninvited customers and unverified accounts rejected",
+    "invitationAuthority": "configured operator only; API and UI regression checks passed",
+    "invitationPage": "invited users, acceptance, current Auth account status and Resend email sending; owner-only before or after setup",
+    "invitationEmail": "Resend key and factory.rgbknights.com sender verified; transport and failure handling mocked; recipient delivery pending first operator send",
+    "appsCatalog": "live owner catalog: first 24, next 24, Gmail search and connections passed; adapter normalizes Agent37 items; browser retry and stale-page checks passed",
+    "appsLayout": "compact horizontal cards with provider logos, fallback initials and Connect controls; Composio hidden in catalog and connected list; five browser regressions and desktop/mobile visual checks passed",
+    "welcomeArtwork": "original SVG feature overview; selected accent color; desktop workspace and mobile layout checks passed",
+    "brandIcon": "supplied transparent brain image used in shared wordmark; 64px browser and 180px home-screen icons; desktop/mobile checks, live asset integrity and metadata verified",
+    "phoneInput": "national formatting, international paste, country switching, incomplete input, canonical storage and mobile layout passed"
+  }
+}
