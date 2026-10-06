@@ -14,5 +14,13 @@ const config: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.resolve(process.cwd(), "../.."),
   allowedDevOrigins: ["127.0.0.1"],
+  async headers() {
+    return ["/api/:path*", "/auth/:path*", "/.well-known/workflow/:path*"].map(
+      (source) => ({
+        source,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      }),
+    );
+  },
 };
 export default withWorkflow(config);

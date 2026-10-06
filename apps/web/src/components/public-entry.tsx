@@ -17,9 +17,11 @@ import { Brand, Companion } from "./companion";
 export function PublicEntry({
   signIn = false,
   pendingEmail,
+  checkingSession = false,
 }: {
   signIn?: boolean;
   pendingEmail?: string;
+  checkingSession?: boolean;
 }) {
   const [email, setEmail] = useState(pendingEmail || "");
   const [website, setWebsite] = useState("");
@@ -46,7 +48,7 @@ export function PublicEntry({
   }, [signIn]);
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (busy || checkingSession) return;
     setBusy(true);
     setError("");
     try {
@@ -91,7 +93,7 @@ export function PublicEntry({
           <br />A lot of <span>possibility.</span>
         </h1>
         <p>
-          A companion with a computer of their own.
+          A personal AI companion with a computer of their own.
           <br />
           Curious about your world. Ready to make room in it.
         </p>
@@ -142,7 +144,7 @@ export function PublicEntry({
                 required
                 maxLength={254}
                 value={email}
-                disabled={busy}
+                disabled={busy || checkingSession}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="you@example.com"
               />
@@ -158,7 +160,10 @@ export function PublicEntry({
                 />
               </label>
             )}
-            <button className="button button-primary" disabled={busy}>
+            <button
+              className="button button-primary"
+              disabled={busy || checkingSession}
+            >
               {busy ? (
                 <Loader2 size={16} className="spin" />
               ) : (

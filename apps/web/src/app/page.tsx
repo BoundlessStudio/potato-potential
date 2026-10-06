@@ -416,14 +416,7 @@ export default function Home() {
     window.location.reload();
   }
 
-  if (booting)
-    return (
-      <main className="boot-screen">
-        <Brand />
-        <Companion size={100} />
-        <p>Making a little room for you…</p>
-      </main>
-    );
+  if (booting) return <PublicEntry checkingSession />;
   if (!signedIn)
     return (
       <>

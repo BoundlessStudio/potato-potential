@@ -4,6 +4,8 @@ An invite-only personal agent beta: one customer, one named companion, one persi
 
 The shared headers use the supplied Potato Potential wordmark, with empty transparent margins trimmed for readable sizing. The supplied mascot cluster provides the browser and phone home-screen icons. Public page titles, the footer, connection confirmation, and invitation emails use Potato Potential branding.
 
+Social sharing uses an imagegen-created mascot card with Open Graph and X large-image metadata. Search metadata uses the production custom domain, a feature-focused description, structured data, and a homepage-only sitemap. The public introduction is present in the initial HTML; sign-in, operator and connection pages carry noindex metadata. See [the social card and generation prompt](docs/social-card.md).
+
 Production: [potato-potential.rgbknights.com](https://potato-potential.rgbknights.com). Both the Vercel and Supabase projects are named `potato-potential`. The custom domain uses a Cloudflare DNS-only CNAME and Vercel HTTPS. Sign-in callbacks and agent workspace callbacks use this origin. Non-secret deployment identifiers are recorded in `infra/deployment.json`.
 
 ## Run the local preview
