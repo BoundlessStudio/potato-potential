@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { credential, joinBeta, sendSignInLink, signOut } from "@/lib/client";
 import { Brand, Companion } from "./companion";
+import { LandingPage } from "./landing-page";
 
 export function PublicEntry({
   signIn = false,
@@ -61,6 +62,110 @@ export function PublicEntry({
       setBusy(false);
     }
   }
+  const signup = (
+    <>
+      <span className="eyebrow">
+        {signIn ? "WELCOME BACK" : "A LITTLE TEAM OF TWO"}
+      </span>
+      <h2>
+        {signIn
+          ? "Make yourself at home."
+          : pendingEmail
+            ? "A little room for you."
+            : "Come grow with us."}
+      </h2>
+      <p>
+        {signIn
+          ? "Use your invited email address. We’ll send you a link to sign in—no password needed."
+          : pendingEmail
+            ? "Your beta access is waiting for approval. Add your email below if you haven’t joined the list yet."
+            : "Join the beta list. We’ll review your request and email an invitation when your place is ready."}
+      </p>
+      {sent ? (
+        <div className="signin-confirmation" role="status">
+          <CheckCircle2 size={17} />
+          <span>
+            {signIn
+              ? "Check your email for your sign-in link. Open it in this browser to continue."
+              : "You’re on the beta list. We’ll email you if your request is approved."}
+          </span>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="stack">
+          <label>
+            Email address
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              maxLength={254}
+              value={email}
+              disabled={busy || checkingSession}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="you@example.com"
+            />
+          </label>
+          {!signIn && (
+            <label className="beta-honeypot" aria-hidden="true">
+              Website
+              <input
+                tabIndex={-1}
+                autoComplete="off"
+                value={website}
+                onChange={(event) => setWebsite(event.target.value)}
+              />
+            </label>
+          )}
+          <button
+            className="button button-primary"
+            disabled={busy || checkingSession}
+          >
+            {busy ? (
+              <Loader2 size={16} className="spin" />
+            ) : (
+              <ArrowRight size={16} />
+            )}
+            {busy
+              ? "Sending…"
+              : signIn
+                ? "Send a sign-in link"
+                : "Join the beta list"}
+          </button>
+        </form>
+      )}
+      {error && (
+        <p className="error-inline" role="alert">
+          {error}
+        </p>
+      )}
+      {sent && (
+        <button
+          className="text-button entry-retry"
+          onClick={() => setSent(false)}
+        >
+          {signIn
+            ? "Use another email or request a new link"
+            : "Add another email"}
+        </button>
+      )}
+      <div className="invite-note">
+        <ShieldCheck size={18} />
+        <span>
+          {signIn
+            ? "Beta access requires an approved invitation."
+            : pendingEmail
+              ? "Signing up joins the list. Your place needs approval."
+              : "Invite-only beta. We review requests before sending invitations."}
+          {(signIn || pendingEmail) && (
+            <>
+              <br />A little space to build something good together.
+            </>
+          )}
+        </span>
+      </div>
+    </>
+  );
+  if (!signIn && !pendingEmail) return <LandingPage signup={signup} />;
   return (
     <main className="welcome-page">
       <div className="welcome-brand">
@@ -74,12 +179,8 @@ export function PublicEntry({
             Sign out
           </button>
         ) : (
-          <Link
-            href={signIn ? "/" : "/signin"}
-            className="button button-secondary"
-          >
-            {signIn ? "Join the beta" : "Sign in"}
-            <ArrowRight size={15} />
+          <Link href="/" className="button button-secondary">
+            Join the beta <ArrowRight size={15} />
           </Link>
         )}
       </div>
@@ -113,103 +214,7 @@ export function PublicEntry({
           </span>
         </div>
       </section>
-      <section className="welcome-signin">
-        <span className="eyebrow">
-          {signIn ? "WELCOME BACK" : "A LITTLE TEAM OF TWO"}
-        </span>
-        <h2>{signIn ? "Make yourself at home." : "A little room for you."}</h2>
-        <p>
-          {signIn
-            ? "Use your invited email address. We’ll send you a link to sign in—no password needed."
-            : pendingEmail
-              ? "Your beta access is waiting for approval. Add your email below if you haven’t joined the list yet."
-              : "Join the beta list. We’ll review your request and email an invitation when your place is ready."}
-        </p>
-        {sent ? (
-          <div className="signin-confirmation" role="status">
-            <CheckCircle2 size={17} />
-            <span>
-              {signIn
-                ? "Check your email for your sign-in link. Open it in this browser to continue."
-                : "You’re on the beta list. We’ll email you if your request is approved."}
-            </span>
-          </div>
-        ) : (
-          <form onSubmit={submit} className="stack">
-            <label>
-              Email address
-              <input
-                type="email"
-                autoComplete="email"
-                required
-                maxLength={254}
-                value={email}
-                disabled={busy || checkingSession}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="you@example.com"
-              />
-            </label>
-            {!signIn && (
-              <label className="beta-honeypot" aria-hidden="true">
-                Website
-                <input
-                  tabIndex={-1}
-                  autoComplete="off"
-                  value={website}
-                  onChange={(event) => setWebsite(event.target.value)}
-                />
-              </label>
-            )}
-            <button
-              className="button button-primary"
-              disabled={busy || checkingSession}
-            >
-              {busy ? (
-                <Loader2 size={16} className="spin" />
-              ) : (
-                <ArrowRight size={16} />
-              )}
-              {busy
-                ? "Sending…"
-                : signIn
-                  ? "Send a sign-in link"
-                  : "Join the beta list"}
-            </button>
-          </form>
-        )}
-        {error && (
-          <p className="error-inline" role="alert">
-            {error}
-          </p>
-        )}
-        {sent && (
-          <button
-            className="text-button entry-retry"
-            onClick={() => setSent(false)}
-          >
-            {signIn
-              ? "Use another email or request a new link"
-              : "Add another email"}
-          </button>
-        )}
-        <div className="invite-note">
-          <ShieldCheck size={18} />
-          <span>
-            {signIn
-              ? "Beta access requires an approved invitation."
-              : "Signing up joins the list. Your place needs approval."}
-            <br />A little space to build something good together.
-          </span>
-        </div>
-        {!signIn && !pendingEmail && (
-          <p className="entry-signin-link">
-            Already invited?{" "}
-            <Link href="/signin">
-              Sign in <ArrowRight size={12} />
-            </Link>
-          </p>
-        )}
-      </section>
+      <section className="welcome-signin">{signup}</section>
       <span className="welcome-footer">
         potato potential · good things happen together
       </span>
