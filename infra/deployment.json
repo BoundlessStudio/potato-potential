@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_GiF17KQqMYzLv8HpFPdwxSndDnEE",
-    "deploymentUrl": "https://potato-potential-3vkxto3sz-venatio-studios.vercel.app",
-    "sourceCommit": "7b6e5a9f95428a609cd430a2cd8103fc9d7f5176",
+    "deploymentId": "dpl_Er7PpomSixk6WKverewLrVCZ5Ejd",
+    "deploymentUrl": "https://potato-potential-kiqwustg4-venatio-studios.vercel.app",
+    "sourceCommit": "fe46ef27b6938b476199cc6ad8c326215619be73",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -15,7 +15,7 @@
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
     "region": "us-east-2",
-    "migrations": ["202610050001", "202610050002", "202610050003"],
+    "migrations": ["202610050001", "202610050002", "202610050003", "202610060001"],
     "siteUrl": "https://potato-potential.rgbknights.com",
     "redirectUrl": "https://potato-potential.rgbknights.com/auth/callback"
   },
@@ -40,9 +40,11 @@
   "validation": {
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 71,
-    "mockBrowserTests": 23,
+    "unitAdapterDatabaseTests": 89,
+    "mockBrowserTests": 25,
     "githubChecks": "passed for deployed source commit",
+    "securityRecovery": "Migration 202610060001 applied and recorded before the app release. Custom domain resolves to the recorded deployment. GitHub CI passed 89 unit/adapter/database tests, 25 browser tests, typecheck and production build. Live checks verified server-only invitation RPC privileges, invalid acceptance rollback, retry preservation of edited profiles, operator-only endpoints, consumed-token denial after account deletion and fresh invitation acceptance for a new account with the same email. Public beta signup remains normalized and deduplicated without enrolling a customer. Temporary Auth/customer/invitation/beta fixtures removed; no external email or provider computer created. Pause/resume recovery, phone-code locking, onboarding freezing, cold-wake allowance, delayed takeover and signing-key reuse were checked with mocked providers. No desktop image update required.",
+    "dependencyAudit": "Production dependencies: zero known vulnerabilities. Full dependency audit flags the development-only concurrently/shell-quote chain under GHSA-pqg4-j6r4-53mv; upgrading shell-quote to 1.11.0 is a separate follow-up.",
     "bigPossibilities": "published after Little possibilities and before the FAQ; Agent37/Hermes computer and multi-tool work, Brave search, Composio connections, image-dependent Perflo paid tools and Inkbox channels explained with seven native technical disclosures; scheduling explanations retained in Little possibilities; keyboard interaction, no-JavaScript disclosures, reduced motion and local 320/390/768/1024/1440 layouts passed; published desktop/390/320 views and all disclosures verified with no page errors, clipped content or application mutations; footer beta CTA, canonical metadata, crawler content, social image and public asset secret checks passed",
     "homepagePanelRemoval": "Removed the project walkthrough and Good things start small onboarding panels, unused styles and How it works navigation; Big possibilities flows directly into FAQ. Typecheck, production build and deployed-source GitHub checks passed; five local homepage/signup/sign-in browser checks passed. Published desktop/mobile views, internal anchors, remaining footer signup CTA and FAQ checked with no application mutations, page errors or horizontal overflow; server HTML, SEO and public asset checks passed.",
     "homepageProviderCopy": "Agent37 appears once in visible homepage copy, within A peek at the machinery; other provider mentions replaced with capability descriptions while source links remain. Two focused landing browser checks, production build and deployed-source GitHub checks passed. Published custom-domain deployment identity and all seven expanded disclosures verified; desktop and 390/320 mobile layouts passed with no page errors, clipped content, horizontal overflow or application mutations.",
