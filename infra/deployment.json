@@ -5,9 +5,9 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_FQpzzrysZQX2Z6kVTGHPmn9vo1Dw",
-    "deploymentUrl": "https://potato-potential-agtcf8fb8-venatio-studios.vercel.app",
-    "sourceCommit": "2158ed15f2b6f486ed66e841dc66d17e7619e403",
+    "deploymentId": "dpl_AML9FA9Sr6ub1hts6a8j7SP1Psfu",
+    "deploymentUrl": "https://potato-potential-9vz9iuxnh-venatio-studios.vercel.app",
+    "sourceCommit": "874f198398e47f54198638cea267b250c1b97c8c",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow"
@@ -59,7 +59,8 @@
     "appsCatalog": "live owner catalog: first 24, next 24, Gmail search and connections passed; adapter normalizes Agent37 items; browser retry and stale-page checks passed",
     "appsLayout": "compact horizontal cards with provider logos, fallback initials and Connect controls; Composio hidden in catalog and connected list; five browser regressions and desktop/mobile visual checks passed",
     "welcomeArtwork": "original SVG feature overview; selected accent color; desktop workspace and mobile layout checks passed",
-    "brandIcon": "supplied minimalist transparent brain image used in shared wordmark; desktop/mobile and production rendering checks passed; live asset matches supplied file; existing browser and home-screen icons retained",
+    "brandIcon": "supplied Potato Potential wordmark replaces shared Boundless headers; supplied mascot cluster provides 64px browser and 180px home-screen icons; transparent padding trimmed; published assets match prepared supplied artwork; desktop, narrow mobile, workspace and operator layout checks passed",
+    "productBranding": "Potato Potential page titles, footer, connection confirmation and invitation email sender/title/artwork; internal ownership identifiers retained",
     "phoneInput": "national formatting, international paste, country switching, incomplete input, canonical storage and mobile layout passed"
   }
 }
