@@ -14,16 +14,13 @@ import {
   Heart,
   Lightbulb,
   ListTodo,
-  Mail,
   MessageCircle,
-  Monitor,
-  MousePointer2,
   Paperclip,
-  Plug,
   Sparkles,
   Sprout,
 } from "lucide-react";
 import { Brand } from "./companion";
+import { BigPossibilities } from "./big-possibilities";
 import styles from "./landing-page.module.css";
 
 const examples = [
@@ -123,6 +120,7 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
         </Link>
         <nav aria-label="Homepage" className={styles.navigation}>
           <a href="#possibilities">Little possibilities</a>
+          <a href="#big-possibilities">Big possibilities</a>
           <a href="#how-it-works">How it works</a>
         </nav>
         <div className={`welcome-navigation ${styles.account}`}>
@@ -321,77 +319,7 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
         </div>
       </section>
 
-      <section className={styles.world} aria-labelledby="world-title">
-        <div className={styles.sectionIntro}>
-          <span className={styles.eyebrow}>
-            <Heart size={16} /> MORE THAN A CHAT WINDOW
-          </span>
-          <h2 id="world-title">
-            A little sidekick.
-            <br />
-            <em>A whole world to work in.</em>
-          </h2>
-        </div>
-        <div className={styles.worldCards}>
-          <article className={styles.computerCard}>
-            <div className={styles.miniDesktop} aria-hidden="true">
-              <div className={styles.desktopBar}>
-                <i />
-                <i />
-                <i />
-                <span>their little workspace</span>
-              </div>
-              <div className={styles.desktopContent}>
-                <Monitor size={46} strokeWidth={1.5} />
-                <span>Ideas → little actions</span>
-              </div>
-              <span className={styles.takeoverSticker}>
-                <MousePointer2 size={16} /> You can take the wheel.
-              </span>
-            </div>
-            <span className={styles.cardLabel}>A COMPUTER OF THEIR OWN</span>
-            <h3>Room to actually do things.</h3>
-            <p>
-              Browse, work on files, and use tools on a persistent computer.
-              Watch along, take over to lend a hand, then give control back.
-            </p>
-          </article>
-          <article className={styles.connectionsCard}>
-            <div className={styles.connectionSketch} aria-hidden="true">
-              <span className={styles.connectionCenter}>
-                <Sprout size={34} strokeWidth={1.6} />
-              </span>
-              <span className={styles.connectionApp}>
-                <Mail size={25} />
-              </span>
-              <span className={styles.connectionApp}>
-                <MessageCircle size={25} />
-              </span>
-              <span className={styles.connectionApp}>
-                <BookOpen size={25} />
-              </span>
-              <span className={styles.connectionApp}>
-                <Plug size={25} />
-              </span>
-              <svg viewBox="0 0 350 140">
-                <path
-                  d="M68 36Q126 7 175 70M285 28Q230 20 175 70M68 114Q125 146 175 70M281 111Q235 138 175 70"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeDasharray="5 7"
-                />
-              </svg>
-            </div>
-            <span className={styles.cardLabel}>BRING YOUR WORLD ALONG</span>
-            <h3>Your tools. Your little rhythm.</h3>
-            <p>
-              Explore the app catalog and connect what you use. Keep in touch
-              through web chat, supported messaging channels, and hosted voice.
-            </p>
-          </article>
-        </div>
-      </section>
+      <BigPossibilities />
 
       <section
         id="how-it-works"

@@ -1,5 +1,68 @@
 import { expect, test } from "@playwright/test";
 
+test("big possibilities supports keyboard exploration and keeps signup as a separate action", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("boundless-demo-user", "signed-out"),
+  );
+  const mutations: string[] = [];
+  page.on("request", (request) => {
+    if (request.method() !== "GET" && request.url().includes("/api/"))
+      mutations.push(request.url());
+  });
+  await page.goto("/");
+  await page
+    .getByRole("link", { name: "Big possibilities", exact: true })
+    .click();
+  await expect(page).toHaveURL(/#big-possibilities$/);
+  const section = page.getByRole("region", { name: "Big possibilities." });
+  await expect(
+    section.getByRole("heading", { name: "Big possibilities." }),
+  ).toBeInViewport();
+
+  // Native disclosures work with a keyboard, including reopening and closing.
+  const voice = section
+    .locator("details")
+    .filter({ hasText: "Inkbox: under the hood" });
+  const voiceSummary = voice.locator("summary");
+  await expect(voice.getByRole("link")).not.toBeVisible();
+  await voiceSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(voice).toHaveAttribute("open", "");
+  await expect(voice).toContainText("rather than reading its memory live");
+  await expect(voice.getByRole("link")).toHaveAttribute(
+    "rel",
+    "noopener noreferrer",
+  );
+  await page.keyboard.press("Enter");
+  await expect(voice).not.toHaveAttribute("open", "");
+  await expect(voice.getByRole("link")).not.toBeVisible();
+
+  const memory = section
+    .locator("details")
+    .filter({ hasText: "Memory & your shared workspace" });
+  await memory.locator("summary").click();
+  await expect(memory).toHaveAttribute("open", "");
+  await expect(memory.locator("code").first()).toBeVisible();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Space");
+  const progress = section
+    .locator("details")
+    .filter({ hasText: "Tool discovery & live progress" });
+  await expect(progress).toHaveAttribute("open", "");
+  await expect(progress).toContainText("recover interrupted streams");
+
+  await section
+    .getByRole("link", { name: "Let’s make room for it", exact: true })
+    .click();
+  await expect(page).toHaveURL(/#join-beta$/);
+  await expect(
+    page.getByLabel("Email address", { exact: true }),
+  ).toBeInViewport();
+  expect(mutations).toEqual([]);
+});
+
 test("homepage examples and FAQs are explorable without creating work or joining the beta", async ({
   page,
 }) => {
