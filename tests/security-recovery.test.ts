@@ -25,12 +25,16 @@ let repo: MemoryRepository,
   server: Server,
   base: string,
   dep: Dependencies;
+const betaToken = "beta-recovery-fixture-token";
 beforeEach(async () => {
   repo = new MemoryRepository();
   a37 = new DemoAgent37();
   inkbox = new DemoInkbox();
   await seedDemo(repo, a37, inkbox);
-  const config = loadConfig({ DEMO_MODE: "true" });
+  const config = loadConfig({
+    DEMO_MODE: "true",
+    BETA_ACCESS_TOKEN: betaToken,
+  });
   lifecycle = new Lifecycle(config, repo, a37, inkbox);
   dep = {
     config,
@@ -52,7 +56,7 @@ function call(
   path: string,
   method = "GET",
   body?: unknown,
-  credential = "demo",
+  credential = path.startsWith("/beta/") ? betaToken : "demo",
 ) {
   return fetch(base + path, {
     method,
@@ -93,9 +97,10 @@ it("requires a new approval after deletion, mints a fresh token and erases the o
   dep.invitationEmail = async (input) => {
     deliveries.push(input);
   };
+  await call("/beta", "POST", { email: "new@example.com" });
   expect(
     (
-      await call("/operator/invitations/send", "POST", {
+      await call("/beta/invitations", "POST", {
         email: "new@example.com",
       })
     ).status,
@@ -106,29 +111,29 @@ it("requires a new approval after deletion, mints a fresh token and erases the o
   ).toBe(200);
   expect(
     (
-      await call("/operator/invitations/send", "POST", {
+      await call("/beta/invitations", "POST", {
         email: "new@example.com",
       })
     ).status,
   ).toBe(409);
   await repo.removeCustomer(DEMO_NEW_USER);
   expect(await repo.invitations()).toHaveLength(0);
-  expect(await repo.betaRequests()).toHaveLength(0);
+  expect(await repo.betaRequests()).toHaveLength(1);
   expect(
     (await call("/invitations/accept", "POST", {}, "demo-new")).status,
   ).toBe(403);
   expect(
     (
-      await call("/operator/invitations/send", "POST", {
+      await call("/beta/invitations", "POST", {
         email: "new@example.com",
       })
     ).status,
   ).toBe(201);
   expect(deliveries).toHaveLength(2);
   expect(deliveries[1].digest).not.toBe(deliveries[0].digest);
-  expect(
-    (await (await call("/operator/invitations")).json()).invitations[0].status,
-  ).toBe("pending");
+  expect((await (await call("/beta/requests")).json()).requests[0].status).toBe(
+    "pending",
+  );
   const otherOwner = randomUUID();
   await expect(
     repo.acceptInvitation(
@@ -146,7 +151,7 @@ it("requires a new approval after deletion, mints a fresh token and erases the o
   // Delivery retry must keep the newly approved token, rather than remint every time.
   expect(
     (
-      await call("/operator/invitations/send", "POST", {
+      await call("/beta/invitations", "POST", {
         email: "new@example.com",
       })
     ).status,

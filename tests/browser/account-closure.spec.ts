@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { PublicAgent } from "@boundless/shared";
 
 test("closes once, shows provider cleanup, and clears sign-in when the account is gone", async ({
   page,
@@ -10,14 +11,15 @@ test("closes once, shows provider cleanup, and clears sign-in when the account i
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let snapshot: { agent: PublicAgent } | undefined;
   await page.route("**/api/me", async (route) => {
     if (closed)
       return route.fulfill({
         status: 401,
         json: { error: { code: "unauthorized", message: "Account removed" } },
       });
-    const response = await route.fetch();
-    const account = await response.json();
+    snapshot ??= await (await route.fetch()).json();
+    const account = structuredClone(snapshot!);
     if (deleting) {
       account.agent.status = "deleting";
       account.agent.deletion = { instance: true, identity: false };
@@ -25,6 +27,7 @@ test("closes once, shows provider cleanup, and clears sign-in when the account i
     await route.fulfill({ json: account });
   });
   await page.route("**/api/account", async (route) => {
+    expect(route.request().method()).toBe("DELETE");
     submissions++;
     await gate;
     deleting = true;
@@ -52,9 +55,9 @@ test("closes once, shows provider cleanup, and clears sign-in when the account i
   await expect(
     page.getByRole("heading", { name: "Saying goodbye, carefully." }),
   ).toBeVisible();
-  await expect(
-    page.getByText("Computer removed", { exact: true }),
-  ).toBeVisible();
+  await expect(page.locator(".setup-steps .done")).toHaveText([
+    "Computer removed",
+  ]);
   expect(submissions).toBe(1);
   closed = true;
   await expect
@@ -74,17 +77,22 @@ test("offers account deletion retry when provider cleanup is interrupted", async
 }) => {
   let deleting = false,
     submissions = 0;
+  let snapshot: { agent: PublicAgent } | undefined;
   await page.route("**/api/me", async (route) => {
-    const response = await route.fetch();
-    const account = await response.json();
+    snapshot ??= await (await route.fetch()).json();
+    const account = structuredClone(snapshot!);
     if (deleting) {
       account.agent.status = "deleting";
-      account.agent.deletion = { instance: true, identity: false };
-      account.agent.error = "Cleanup is incomplete. Please retry deletion.";
+      account.agent.deletion = { instance: true, identity: submissions > 1 };
+      account.agent.error =
+        submissions === 1
+          ? "Cleanup is incomplete. Please retry deletion."
+          : undefined;
     }
     await route.fulfill({ json: account });
   });
   await page.route("**/api/account", async (route) => {
+    expect(route.request().method()).toBe("DELETE");
     submissions++;
     deleting = true;
     await route.fulfill({ status: 202, json: { queued: true } });
@@ -104,4 +112,11 @@ test("offers account deletion retry when provider cleanup is interrupted", async
   await expect(
     page.getByRole("heading", { name: "Saying goodbye, carefully." }),
   ).toBeVisible();
+  await expect(page.locator(".setup-steps .done")).toHaveText([
+    "Computer removed",
+    "Messaging identity removed",
+  ]);
+  await expect(
+    page.getByRole("button", { name: "Retry account deletion", exact: true }),
+  ).toHaveCount(0);
 });

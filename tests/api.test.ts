@@ -87,10 +87,10 @@ it("validates catalog search before provider calls and allows an unfiltered firs
     (await (await call("/apps?search=gmail")).json()).toolkits[0].slug,
   ).toBe("gmail");
 });
-it("allows only the operator to maintain their own computer and rejects caller-supplied targets", async () => {
+it("requires a ready owned computer for maintenance and rejects caller-supplied targets", async () => {
   expect(
     (await call("/computer/maintenance", "GET", undefined, "demo-new")).status,
-  ).toBe(403);
+  ).toBe(409);
   expect(
     (
       await call(
@@ -100,7 +100,7 @@ it("allows only the operator to maintain their own computer and rejects caller-s
         "demo-new",
       )
     ).status,
-  ).toBe(403);
+  ).toBe(409);
   expect(
     (
       await call("/computer/maintenance", "POST", {
@@ -218,21 +218,40 @@ it("guards stale native memory edits and returns chat SSE suitable for replay", 
     "response.completed",
   );
 });
-it("converts once reminders to the customer timezone and preserves native scheduling", async () => {
-  const when = new Date();
-  when.setUTCDate(when.getUTCDate() + 2);
-  when.setUTCHours(13, 30, 0, 0);
-  const result = await (
-    await call("/routines", "POST", {
-      name: "Once",
-      prompt: "Check in",
-      when: when.toISOString(),
-    })
-  ).json();
-  expect(result.routine.timezone).toBe("America/Toronto");
-  expect(result.routine.schedule).toMatch(/^30 9 /);
-  expect(result.routine.agent).toBe("hermes");
-});
+it.each([
+  {
+    season: "summer",
+    now: "2026-07-10T12:00:00Z",
+    when: "2026-07-12T13:30:00Z",
+    schedule: "30 9 12 7 *",
+  },
+  {
+    season: "winter",
+    now: "2026-12-13T12:00:00Z",
+    when: "2026-12-15T13:30:00Z",
+    schedule: "30 8 15 12 *",
+  },
+])(
+  "converts a $season reminder to the customer's local date and time",
+  async ({ now, when, schedule }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(now));
+    try {
+      const response = await call("/routines", "POST", {
+        name: "Once",
+        prompt: "Check in",
+        when,
+      });
+      expect(response.status).toBe(201);
+      const result = await response.json();
+      expect(result.routine.timezone).toBe("America/Toronto");
+      expect(result.routine.schedule).toBe(schedule);
+      expect(result.routine.agent).toBe("hermes");
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 it("does not claim suspension when the provider could not stop the computer", async () => {
   vi.spyOn(a37, "stop").mockRejectedValueOnce(
     new ProviderError(503, "unavailable", "Try again."),

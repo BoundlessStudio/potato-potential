@@ -5,16 +5,11 @@ import Link from "next/link";
 import { ArrowLeft, Loader2, X } from "lucide-react";
 import { api, ApiError } from "@/lib/client";
 import { Brand } from "./companion";
-import { Invitations } from "./invitations";
 import { Operator } from "./views";
 
 type Access = "checking" | "allowed" | "signed-out" | "denied" | "error";
 
-export function OperatorWorkspace({
-  operations = false,
-}: {
-  operations?: boolean;
-}) {
+export function OperatorWorkspace() {
   const [access, setAccess] = useState<Access>("checking");
   const [message, setMessage] = useState<{
     text: string;
@@ -64,18 +59,12 @@ export function OperatorWorkspace({
           <Loader2 size={18} className="spin" /> Checking your account…
         </p>
       ) : access === "allowed" ? (
-        operations ? (
-          <Operator onError={onError} onSuccess={onSuccess} />
-        ) : (
-          <Invitations onError={onError} onSuccess={onSuccess} />
-        )
+        <Operator onError={onError} onSuccess={onSuccess} />
       ) : (
         <section className="settings-card operator-access-card">
           <h1>
             {access === "signed-out"
-              ? operations
-                ? "Sign in to manage the beta."
-                : "Sign in to manage invitations."
+              ? "Sign in to manage companions."
               : access === "denied"
                 ? "Operator access only."
                 : "Couldn’t check your access."}
@@ -83,7 +72,7 @@ export function OperatorWorkspace({
           <p>
             {access === "error"
               ? "Try checking your account again."
-              : "Beta invitations are available only to the verified operator account."}
+              : "Companion operations are available only to the verified operator account."}
           </p>
           {access === "error" ? (
             <button
@@ -96,7 +85,10 @@ export function OperatorWorkspace({
               Try again
             </button>
           ) : (
-            <Link href={access === "signed-out" ? "/signin" : "/"} className="button button-primary">
+            <Link
+              href={access === "signed-out" ? "/signin" : "/"}
+              className="button button-primary"
+            >
               {access === "signed-out" ? "Sign in" : "Back to companion"}
             </Link>
           )}

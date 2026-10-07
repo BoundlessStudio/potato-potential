@@ -2,13 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   ArrowDown,
   ArrowRight,
   BookOpen,
   Check,
-  ChevronDown,
   Clock3,
   Flower2,
   Heart,
@@ -25,7 +24,7 @@ import styles from "./landing-page.module.css";
 
 const examples = [
   {
-    name: "Make room in my week",
+    name: "Tasks",
     icon: ListTodo,
     category: "TASKS",
     heading: "The next step, without the mental clutter.",
@@ -42,8 +41,8 @@ const examples = [
     ],
   },
   {
-    name: "Untangle an idea",
-    icon: Lightbulb,
+    name: "Wiki",
+    icon: BookOpen,
     category: "WIKI",
     heading: "A home for ideas as they grow.",
     description:
@@ -59,7 +58,7 @@ const examples = [
     ],
   },
   {
-    name: "Remember the little things",
+    name: "Routines",
     icon: Clock3,
     category: "ROUTINES",
     heading: "A little rhythm goes a long way.",
@@ -77,34 +76,7 @@ const examples = [
   },
 ];
 
-const questions = [
-  {
-    question: "A companion… with a computer?",
-    answer:
-      "Yes. Your companion has a persistent computer where they can browse, use tools, and work on files. You can watch the desktop, take over with your mouse and keyboard, and return control when you’re ready.",
-  },
-  {
-    question: "Can I make them my own?",
-    answer:
-      "You choose their name, companion avatar, accent color, and personality. Add preferences and useful context in your wiki, and edit their memory in Settings as you get to know each other.",
-  },
-  {
-    question: "How does the beta work?",
-    answer:
-      "Add your email to the list. We review requests and email invitations as places open up. Joining the list doesn’t create an account or an agent yet. Once invited, you can sign in with a passwordless email link and set up your companion.",
-  },
-  {
-    question: "What can I connect?",
-    answer:
-      "Browse the full app connector catalog from your workspace, then connect the tools you use. You can also set up supported messaging and voice channels. Availability depends on the app and channel; your workspace shows connection instructions and status.",
-  },
-];
-
 export function LandingPage({ signup }: { signup: ReactNode }) {
-  const [selected, setSelected] = useState(0);
-  const example = examples[selected];
-  const ExampleIcon = example.icon;
-
   return (
     <main className={styles.page}>
       <a href="#join-beta" className={styles.skipLink}>
@@ -240,7 +212,7 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
             <Sparkles size={16} /> THE LITTLE THINGS ADD UP
           </span>
           <h2 id="possibilities-title">
-            What’s on <em>your plate?</em>
+            Little <em>possibilities</em>
           </h2>
           <p>
             You bring the wonderfully human stuff.
@@ -249,96 +221,66 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
           </p>
         </div>
         <div className={styles.exampleLayout}>
-          <div className={styles.examplePicker}>
-            <p className={styles.handwritten}>Pick a little what-if…</p>
-            <div
-              className={styles.exampleButtons}
-              role="group"
-              aria-label="Try a companion example"
-            >
-              {examples.map(({ name, icon: Icon }, index) => (
-                <button
-                  key={name}
-                  type="button"
-                  aria-pressed={selected === index}
-                  aria-controls="companion-example"
-                  onClick={() => setSelected(index)}
-                >
-                  <Icon size={21} />
-                  <span>{name}</span>
-                  <ArrowRight size={18} />
-                </button>
-              ))}
-            </div>
-            <div className={styles.exampleDescription}>
-              <span className={styles.eyebrow}>{example.category}</span>
-              <h3>{example.heading}</h3>
-              <p>{example.description}</p>
-            </div>
-          </div>
-          <div
-            id="companion-example"
-            className={styles.examplePaper}
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <div className={styles.paperHeading}>
-              <span>
-                <span aria-hidden="true" /> A LITTLE WHAT-IF
-              </span>
-              <Sparkles size={17} />
-            </div>
-            <div className={styles.chatExample}>
-              <span className={styles.speaker}>YOU</span>
-              <p className={styles.youBubble}>{example.prompt}</p>
-              <span className={styles.speaker}>
-                <Sprout size={14} /> YOUR COMPANION
-              </span>
-              <p className={styles.companionBubble}>{example.reply}</p>
-            </div>
-            <div className={styles.artifact}>
-              <div className={styles.artifactTitle}>
-                <ExampleIcon size={19} />
-                <h4>{example.artifact}</h4>
-                <span>EXAMPLE</span>
-              </div>
-              <ul>
-                {example.items.map((item) => (
-                  <li key={item}>
-                    <span className={styles.artifactCheck} aria-hidden="true" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <p className={styles.sampleNote}>
-              A few ideas to start with. You make it your own.
-            </p>
-          </div>
+          {examples.map((example) => {
+            const Icon = example.icon;
+            const titleId = `${example.category.toLowerCase()}-title`;
+            return (
+              <article
+                key={example.name}
+                className={styles.exampleCard}
+                aria-labelledby={titleId}
+              >
+                <div className={styles.exampleDescription}>
+                  <h3 id={titleId}>
+                    <Icon size={22} aria-hidden="true" /> {example.name}
+                  </h3>
+                  <h4>{example.heading}</h4>
+                  <p>{example.description}</p>
+                </div>
+                <div className={styles.examplePaper}>
+                  <div className={styles.paperHeading}>
+                    <span>
+                      <span aria-hidden="true" /> A LITTLE WHAT-IF
+                    </span>
+                    <Sparkles size={17} aria-hidden="true" />
+                  </div>
+                  <div className={styles.chatExample}>
+                    <span className={styles.speaker}>YOU</span>
+                    <p className={styles.youBubble}>{example.prompt}</p>
+                    <span className={styles.speaker}>
+                      <Sprout size={14} aria-hidden="true" /> YOUR COMPANION
+                    </span>
+                    <p className={styles.companionBubble}>{example.reply}</p>
+                  </div>
+                  <div className={styles.artifact}>
+                    <div className={styles.artifactTitle}>
+                      <Icon size={19} aria-hidden="true" />
+                      <h5>{example.artifact}</h5>
+                      <span>EXAMPLE</span>
+                    </div>
+                    <ul>
+                      {example.items.map((item) => (
+                        <li key={item}>
+                          <span
+                            className={styles.artifactCheck}
+                            aria-hidden="true"
+                          />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p className={styles.sampleNote}>
+                    A few ideas to start with. You make it your own.
+                  </p>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 
       <BigPossibilities />
-
-      <section className={styles.faq} aria-labelledby="faq-title">
-        <div className={styles.sectionIntro}>
-          <span className={styles.eyebrow}>CURIOUS? GOOD.</span>
-          <h2 id="faq-title">
-            A few little <em>answers.</em>
-          </h2>
-        </div>
-        <div className={styles.questions}>
-          {questions.map(({ question, answer }) => (
-            <details key={question}>
-              <summary>
-                {question}
-                <ChevronDown size={20} />
-              </summary>
-              <p>{answer}</p>
-            </details>
-          ))}
-        </div>
-      </section>
 
       <footer className={styles.footer}>
         <Link
@@ -348,7 +290,9 @@ export function LandingPage({ signup }: { signup: ReactNode }) {
         >
           <Brand />
         </Link>
-        <span>A little help. A lot of possibility.</span>
+        <a className={styles.studioLink} href="https://venatiostudios.com/">
+          Venatio Studios 2026
+        </a>
         <a href="#join-beta">
           Let’s grow something good <Sprout size={18} />
         </a>

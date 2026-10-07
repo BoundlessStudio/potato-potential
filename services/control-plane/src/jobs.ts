@@ -5,6 +5,10 @@ import { reconcileLocked } from "./app";
 import { HttpError } from "./security";
 import { reconcileSuspensionLocked, suspensionPending } from "./suspension";
 import {
+  reconcileComputerLinksLocked,
+  computerLinkWorkPending,
+} from "./computer-services";
+import {
   failComputerOperation,
   computerBusy,
   maintainComputerLocked,
@@ -147,6 +151,7 @@ export async function executeJobSlice(
   try {
     if (job.kind === "reconcile" || job.kind === "maintenance") {
       return await dep.repo.locked(job.owner_id, async () => {
+        await reconcileComputerLinksLocked(dep, job.owner_id, true);
         let agent = await dep.repo.agent(job.owner_id);
         if (agent && suspensionPending(agent)) {
           await reconcileSuspensionLocked(dep, agent);
@@ -156,7 +161,8 @@ export async function executeJobSlice(
         if (agent && computerBusy(agent)) {
           maintenanceOperationId = agent.computerOperation!.id;
           more = await maintainComputerLocked(dep, job.owner_id);
-        } else await reconcileLocked(dep, job.owner_id);
+        } else more = !!(await reconcileLocked(dep, job.owner_id));
+        more = more || (await computerLinkWorkPending(dep, job.owner_id));
         // Finish under the same lease as the state read. A newly requested operation
         // cannot be swallowed by an ordinary reconciliation that is about to finish.
         await jobs.finish(id, worker, more ? "continue" : "completed");

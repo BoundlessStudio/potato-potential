@@ -1,0 +1,62 @@
+[
+  {
+    "file": "brave.svg",
+    "source": "https://brave.com/static-assets/images/brave-logo-sans-text.svg",
+    "bytes": 4084
+  },
+  {
+    "file": "composio.png",
+    "source": "https://composio.dev/apple-touch-icon.png",
+    "bytes": 8828
+  },
+  {
+    "file": "perflo.svg",
+    "source": "https://perflo.ai/seo/icon.svg",
+    "bytes": 1292
+  },
+  {
+    "file": "inkbox.png",
+    "source": "https://inkbox.ai/static/favicons/logo-inkbox-icon.png",
+    "bytes": 48700
+  },
+  {
+    "file": "gmail.svg",
+    "source": "https://logos.composio.dev/api/gmail",
+    "bytes": 1298
+  },
+  {
+    "file": "googlecalendar.svg",
+    "source": "https://logos.composio.dev/api/googlecalendar",
+    "bytes": 6693
+  },
+  {
+    "file": "slack.svg",
+    "source": "https://logos.composio.dev/api/slack",
+    "bytes": 2109
+  },
+  {
+    "file": "notion.svg",
+    "source": "https://logos.composio.dev/api/notion",
+    "bytes": 2251
+  },
+  {
+    "file": "github.svg",
+    "source": "https://logos.composio.dev/api/github",
+    "bytes": 1535
+  },
+  {
+    "file": "apify.svg",
+    "source": "https://logos.composio.dev/api/apify",
+    "bytes": 2304
+  },
+  {
+    "file": "exa.svg",
+    "source": "https://logos.composio.dev/api/exa",
+    "bytes": 8309
+  },
+  {
+    "file": "googlemaps.png",
+    "source": "https://www.gstatic.com/images/branding/product/2x/maps_96in128dp.png",
+    "bytes": 8387
+  }
+]

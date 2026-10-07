@@ -17,6 +17,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env) {
     inkboxKey: env.INKBOX_ADMIN_KEY || "",
     resendKey: env.RESEND_API_KEY || "",
     invitationFrom: env.INVITATION_FROM_EMAIL || env.SMTP_FROM_EMAIL || "",
+    betaAccessToken: env.BETA_ACCESS_TOKEN || "",
     desktopTemplate: env.DESKTOP_TEMPLATE || "boundless-hermes-desktop@4",
     encryptionKey: env.PROVISIONING_ENCRYPTION_KEY || "",
     operators: (env.OPERATOR_EMAILS || "")

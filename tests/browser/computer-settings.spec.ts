@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("operator confirms updates and can recover progress after closing Settings", async ({
+test("customers confirm updates and can recover progress after leaving Computer", async ({
   page,
 }) => {
   const errors: string[] = [];
@@ -23,8 +23,11 @@ test("operator confirms updates and can recover progress after closing Settings"
     }
     return route.fulfill({ json: status });
   });
+  await page.route("**/api/computer/status", (route) =>
+    route.fulfill({ json: status }),
+  );
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Computer", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Update computer", exact: true }),
   ).toBeEnabled();
@@ -51,7 +54,7 @@ test("operator confirms updates and can recover progress after closing Settings"
   ).toBeDisabled();
   expect(actions).toEqual([{ action: "update" }]);
   await page.reload();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Computer", exact: true }).click();
   await expect(
     page.getByText("Checking that everything is ready…"),
   ).toBeVisible();
@@ -109,7 +112,7 @@ test("operator confirms updates and can recover progress after closing Settings"
   expect(errors).toEqual([]);
 });
 
-test("regular customers do not see or request operator maintenance controls", async ({
+test("regular customers find maintenance in Computer and general preferences in Settings", async ({
   page,
 }) => {
   let maintenanceRequests = 0;
@@ -135,4 +138,11 @@ test("regular customers do not see or request operator maintenance controls", as
     page.getByRole("button", { name: "Update computer", exact: true }),
   ).toHaveCount(0);
   expect(maintenanceRequests).toBe(0);
+  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Restart computer", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Update computer", exact: true }),
+  ).toBeEnabled();
 });

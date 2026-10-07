@@ -4,6 +4,102 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+it("uses native remote directory listings while excluding files, links and unsafe destinations", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        exit_code: 0,
+        stdout: JSON.stringify({ path: "/home/node" }),
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        path: "/home/node",
+        parentPath: "/home",
+        truncated: true,
+        entries: [
+          {
+            name: "客户",
+            path: "/home/node/客户",
+            type: "directory",
+            hidden: false,
+          },
+          {
+            name: ".hermes",
+            path: "/home/node/.hermes",
+            type: "directory",
+            hidden: true,
+          },
+          {
+            name: "file.txt",
+            path: "/home/node/file.txt",
+            type: "file",
+            hidden: false,
+          },
+          {
+            name: "alias",
+            path: "/home/node/alias",
+            type: "symlink",
+            hidden: false,
+          },
+          { name: "escape", path: "/etc", type: "directory", hidden: false },
+          {
+            name: "..",
+            path: "/home/node/..",
+            type: "directory",
+            hidden: true,
+          },
+        ],
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        exit_code: 1,
+        stdout: JSON.stringify({
+          code: "invalid_directory",
+          error: "Symbolic link.",
+        }),
+      }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({
+        exit_code: 1,
+        stdout: JSON.stringify({
+          code: "directory_not_found",
+          error: "Missing folder.",
+        }),
+      }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Agent37("server-only-key");
+  expect(await provider.listDirectories("abcdefghij", "~/")).toEqual({
+    path: "/home/node",
+    parentPath: null,
+    truncated: true,
+    directories: [
+      { name: "客户", path: "/home/node/客户", hidden: false },
+      { name: ".hermes", path: "/home/node/.hermes", hidden: true },
+    ],
+  });
+  expect(fetch.mock.calls[1][0]).toBe(
+    "https://abcdefghij.agent37.app/v1/files?path=%2Fhome%2Fnode",
+  );
+  expect(fetch.mock.calls[1][1].headers["X-Agent37-Key"]).toBe(
+    "server-only-key",
+  );
+  await expect(
+    provider.listDirectories("abcdefghij", "/home/node/alias"),
+  ).rejects.toMatchObject({ status: 400, code: "invalid_directory" });
+  await expect(
+    provider.listDirectories("abcdefghij", "/home/node/missing"),
+  ).rejects.toMatchObject({ status: 404, code: "directory_not_found" });
+  expect(fetch).toHaveBeenCalledTimes(4);
+  await expect(
+    provider.listDirectories("abcdefghij", "/etc"),
+  ).rejects.toMatchObject({ code: "invalid_directory" });
+  expect(fetch).toHaveBeenCalledTimes(4);
+});
 it("requires Agent37 to confirm deletion of the requested instance", async () => {
   const fetch = vi
     .fn()
@@ -108,6 +204,8 @@ it("uses hosting auth, managed cap contract, and an owner desktop token lasting 
     .mockResolvedValueOnce(
       Response.json({
         url: "https://abcdefghij-6901.agent37.app/?a37_token=owner-token",
+        port: 6901,
+        expires_at: Math.floor(Date.now() / 1000) + 60,
       }),
     );
   vi.stubGlobal("fetch", fetch);
@@ -119,6 +217,104 @@ it("uses hosting auth, managed cap contract, and an owner desktop token lasting 
     ws: "wss://abcdefghij-6901.agent37.app/websockify?a37_token=owner-token",
   });
   expect(JSON.parse(fetch.mock.calls[1][1].body).ttl_seconds).toBe(60);
+});
+it("uses the hosting contracts for metrics, signed services and public creation/removal", async () => {
+  const points = [[Math.floor(Date.now() / 1000), 0.5]];
+  const metrics = {
+    series: { cpu_cores: points, memory_bytes: points, disk_bytes: points },
+    limits: { cpu_cores: 2, memory_bytes: 4e9, disk_bytes: 20e9 },
+    hours: 24,
+    step_seconds: 60,
+    fetched_at: Math.floor(Date.now() / 1000),
+  };
+  const entry = {
+    port: 8788,
+    url: "https://01234567890123456789.agent37.app",
+    label: "Preview",
+  };
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(Response.json(metrics))
+    .mockResolvedValueOnce(
+      Response.json({
+        port: 8788,
+        url: "https://abcdefghij-8788.agent37.app/?a37_token=preview-token",
+        expires_at: Math.floor(Date.now() / 1000) + 604800,
+      }),
+    )
+    .mockResolvedValueOnce(Response.json(entry))
+    .mockResolvedValueOnce(Response.json({ data: [entry] }))
+    .mockResolvedValueOnce(Response.json({ port: 8788, deleted: true }));
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Agent37("hosting-secret");
+  expect(await provider.metrics("abcdefghij")).toEqual(metrics);
+  expect((await provider.signedUrl("abcdefghij", 8788, 604800)).port).toBe(
+    8788,
+  );
+  await provider.createPublicPort("abcdefghij", 8788, "Preview");
+  await provider.publicPorts("abcdefghij");
+  await provider.removePublicPort("abcdefghij", 8788);
+  expect(
+    fetch.mock.calls.map(
+      ([url]) => new URL(url).pathname + new URL(url).search,
+    ),
+  ).toEqual([
+    "/v1/instances/abcdefghij/metrics?hours=24",
+    "/v1/instances/abcdefghij/signed-url",
+    "/v1/instances/abcdefghij/public-ports",
+    "/v1/instances/abcdefghij/public-ports",
+    "/v1/instances/abcdefghij/public-ports/8788",
+  ]);
+  expect(
+    fetch.mock.calls.every(
+      ([, init]) => init.headers.Authorization === "Bearer hosting-secret",
+    ),
+  ).toBe(true);
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+    port: 8788,
+    ttl_seconds: 604800,
+  });
+  expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({
+    port: 8788,
+    label: "Preview",
+  });
+});
+it.each([
+  "http://abcdefghij-8788.agent37.app/?a37_token=x",
+  "https://abcdefghij-8788.agent37.app.evil.test/?a37_token=x",
+  "https://other12345-8788.agent37.app/?a37_token=x",
+  "https://user:password@abcdefghij-8788.agent37.app/?a37_token=x",
+  "https://abcdefghij-8788.agent37.app/",
+])("rejects an unsafe or foreign signed service address %s", async (url) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      Response.json({
+        url,
+        port: 8788,
+        expires_at: Math.floor(Date.now() / 1000) + 3600,
+      }),
+    ),
+  );
+  await expect(
+    new Agent37("secret").signedUrl("abcdefghij", 8788, 3600),
+  ).rejects.toThrow();
+});
+it("does not treat unconfirmed public removal or malformed metrics as successful", async () => {
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValueOnce(Response.json({ port: 8790, deleted: true }))
+      .mockResolvedValueOnce(
+        Response.json({ series: { cpu_cores: [[1, -1]] }, limits: {} }),
+      ),
+  );
+  const provider = new Agent37("secret");
+  await expect(
+    provider.removePublicPort("abcdefghij", 8788),
+  ).rejects.toMatchObject({ code: "public_removal_unconfirmed" });
+  await expect(provider.metrics("abcdefghij")).rejects.toThrow();
 });
 it("accepts only the exact owner inbound 1:1 verification from Inkbox records", async () => {
   const messages = [

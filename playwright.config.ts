@@ -12,6 +12,7 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "npm run demo",
+    env: { BETA_ACCESS_TOKEN: "beta-browser-fixture-token" },
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,

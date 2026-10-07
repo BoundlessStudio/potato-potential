@@ -1,3 +1,4 @@
+import Image from "next/image";
 import {
   ArrowRight,
   BookOpen,
@@ -5,11 +6,11 @@ import {
   ExternalLink,
   FileCode2,
   Globe2,
-  Layers3,
+  Mail,
   MessageCircle,
   Monitor,
   MousePointer2,
-  Plug,
+  Phone,
   Search,
   Sparkles,
   Sprout,
@@ -19,21 +20,29 @@ import {
 import styles from "./big-possibilities.module.css";
 
 // Capability descriptions checked against Agent37's full docs on 2026-10-06.
+// Catalog examples checked against Composio toolkits and perflo.ai/marketplace.
 // Keep provider capabilities distinct from channels and tools enabled in a workspace.
 const partners = [
   {
     name: "Brave",
     category: "WEB RESEARCH",
-    icon: Search,
+    logo: "/brand/services/brave.svg",
+    integrations: [],
     color: "peach",
     title: "A very useful rabbit hole.",
     description:
-      "Give your companion a question worth digging into. Brave Search brings back current web results; the browser lets them open sources, compare the details, and turn the trail of tabs into a useful brief with links you can check.",
+      "Spend less time opening tabs and more time deciding. Brave Search helps your companion find current information on the web. They can open the sources, compare the details, and bring you a useful answer with links you can check.",
+    services:
+      "Web results, searches by country and language, and freshness filters for recent information.",
     features: [
-      "Research a new idea, a destination, or the tools for a project.",
-      "Compare options and keep the sources alongside the findings.",
-      "Turn a pile of links into a sourced comparison or project brief.",
+      "Compare tools for your next project, including features, pricing, and tradeoffs.",
+      "Research a destination and gather places, opening hours, and useful local information.",
+      "Catch up on a topic with a short brief that keeps the sources beside the findings.",
     ],
+    example:
+      "Compare three newsletter platforms for my small business. Include current pricing and links to the sources.",
+    outcome:
+      "A comparison you can use to choose, with the research already gathered.",
     technical:
       "Managed Brave search uses an HTTP API, with query, country, language, and freshness options. Search finds the pages; the companion’s browser reads them.",
     availability: "Managed search on the companion’s computer",
@@ -43,16 +52,28 @@ const partners = [
   {
     name: "Composio",
     category: "CONNECTED APPS",
-    icon: Plug,
+    logo: "/brand/services/composio.png",
+    integrations: [
+      { name: "Gmail", logo: "/brand/services/gmail.svg" },
+      { name: "Google Calendar", logo: "/brand/services/googlecalendar.svg" },
+      { name: "Slack", logo: "/brand/services/slack.svg" },
+      { name: "Notion", logo: "/brand/services/notion.svg" },
+      { name: "GitHub", logo: "/brand/services/github.svg" },
+    ],
     color: "mint",
     title: "Your apps, pulling together.",
     description:
-      "Connect the tools where your life already happens. Your companion can find the right app action, read the context, and do useful work across accounts you connect: email, calendars, documents, project tools, and more.",
+      "Give your companion useful context from the apps you already use, then ask them to help move the work forward. Composio connects your accounts so a conversation can become a calendar event, a document update, or a project task.",
+    services:
+      "A few examples from the app catalog. Connect the accounts you want to use in Apps.",
     features: [
-      "Bring Gmail, Google Calendar, Slack, Notion, or GitHub into a task.",
-      "Turn a thread into a task, update a document, or organize a project.",
-      "Browse the full catalog in Apps, check connections, and disconnect.",
+      "Gmail + Google Calendar: find an email thread, draft a reply, or schedule a follow-up.",
+      "Slack + Notion: gather project updates and turn them into a shared summary or next steps.",
+      "GitHub: read issues and pull requests, then create or update an issue for the work ahead.",
     ],
+    example:
+      "Summarize this week’s project updates from Slack and add the decisions and next steps to our Notion page.",
+    outcome: "A current project summary in the place your team already checks.",
     technical:
       "Composio exposes tools through MCP (Model Context Protocol). The agent discovers actions as needed instead of loading the entire catalog. Connections are scoped to its instance and survive restarts; app availability and authorization requirements vary.",
     availability: "Connect your accounts in Apps",
@@ -62,16 +83,27 @@ const partners = [
   {
     name: "Perflo",
     category: "SPECIALIST TOOLS",
-    icon: Layers3,
+    logo: "/brand/services/perflo.svg",
+    integrations: [
+      { name: "Apify", logo: "/brand/services/apify.svg" },
+      { name: "Exa", logo: "/brand/services/exa.svg" },
+      { name: "Google Maps", logo: "/brand/services/googlemaps.png" },
+    ],
     color: "butter",
     title: "A little help from the specialists.",
     description:
-      "Some jobs need a tool with a particular talent. The managed Perflo catalog offers services by the call: web scraping, company and people lookups, data enrichment, generation, and other specialist capabilities, without separate vendor subscriptions.",
+      "Reach for a specialist when a job needs more than a web search. Perflo lets your companion buy individual tool calls for web data, research, lookups, enrichment, and creative work. You can get a specific result without setting up a separate subscription with each vendor.",
+    services:
+      "Available services and prices are listed in the live catalog; each paid call uses the managed-service budget.",
     features: [
-      "Discover a service and its listed price before choosing a tool.",
-      "Collect structured web data or enrich a research dataset.",
-      "Pay for a specific tool call from the managed-service budget.",
+      "Web data: collect structured information from sites for a spreadsheet or comparison.",
+      "Research and lookups: find companies, people, or places and fill gaps in a working dataset.",
+      "Creative services: discover generation tools for a project and check the price before choosing one.",
     ],
+    example:
+      "Find a service that can collect public coworking-space listings for my city. Show me the price before running it.",
+    outcome:
+      "A specialist tool for the job, with a per-call cost instead of another subscription.",
     technical:
       "The Perflo MCP server provides list_services, spend, pay, and get_task_result. Discovery is free. pay accepts a maxCharge checked before payment; spend chooses a vendor and reports the final charge. Tool availability depends on the installed desktop image and configuration.",
     availability: "Paid tools · desktop image dependent",
@@ -81,16 +113,27 @@ const partners = [
   {
     name: "Inkbox",
     category: "MESSAGES, EMAIL & CALLS",
-    icon: MessageCircle,
+    logo: "/brand/services/inkbox.png",
+    integrations: [
+      { name: "Email", icon: Mail },
+      { name: "iMessage", icon: MessageCircle },
+      { name: "Voice calls", icon: Phone },
+    ],
     color: "lilac",
     title: "A ‘hey’ away from your day.",
     description:
-      "Keep the conversation going beyond the web workspace. Your companion gets an Inkbox identity for email and supported messaging. Forward a thread, send a thought from your phone, or get a useful update when work produces something worth sharing.",
+      "Keep your companion close when you’re away from the web workspace. Inkbox gives them their own email inbox and supported messaging channels. Forward a thread, send a thought from your phone, or receive an update when there’s something useful to share.",
+    services:
+      "An email address, an iMessage connection, and hosted voice calls. SMS is available when enabled for the account; your workspace provides the channel setup instructions.",
     features: [
-      "Connect iMessage from your phone using the supplied instructions.",
-      "Email your companion, forward a thread, or CC them into context.",
-      "Use hosted voice calls; SMS is available when the account supports it.",
+      "Email: forward a long thread and ask for the key decisions, dates, and a draft reply.",
+      "iMessage: capture a thought, check on a task, or ask a quick question from your phone.",
+      "Voice: talk through an idea with the hosted voice assistant; your companion receives the transcript afterward.",
     ],
+    example:
+      "I’ve forwarded the venue’s email. Pull out the dates and questions I need to answer, and draft a reply.",
+    outcome:
+      "Useful follow-through from the conversations you already have during your day.",
     technical:
       "Signed webhooks deliver incoming events and can wake the computer. Web, text, and email conversations share Hermes’ native memory. Hosted voice has its own instructions and sends Hermes a transcript afterward, rather than reading its memory live. Phone ownership and channel setup come first.",
     availability: "Complete the channel setup in your workspace",
@@ -200,7 +243,7 @@ export function BigPossibilities() {
 
       <div className={styles.partnerIntro}>
         <div>
-          <span className={styles.eyebrow}>GOOD COMPANY UNDER THE HOOD</span>
+          <span className={styles.eyebrow}>GOOD COMPANY</span>
           <h3>One companion. A well-stocked toolbox.</h3>
         </div>
         <p>
@@ -209,64 +252,87 @@ export function BigPossibilities() {
         </p>
       </div>
       <div className={styles.partners}>
-        {partners.map((partner) => {
-          const Icon = partner.icon;
-          return (
-            <article
-              key={partner.name}
-              className={`${styles.partner} ${styles[partner.color]}`}
-            >
-              <div className={styles.partnerTop}>
-                <span className={styles.partnerIcon}>
-                  <Icon size={24} strokeWidth={1.7} aria-hidden="true" />
-                </span>
-                <div>
-                  <span className={styles.partnerName}>{partner.name}</span>
-                  <span className={styles.category}>{partner.category}</span>
-                </div>
-              </div>
-              <h4>{partner.title}</h4>
-              <p>{partner.description}</p>
-              <ul>
-                {partner.features.map((feature) => (
-                  <li key={feature}>
-                    <ArrowRight size={14} aria-hidden="true" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              <span className={styles.availability}>
-                {partner.availability}
+        {partners.map((partner) => (
+          <article
+            key={partner.name}
+            className={`${styles.partner} ${styles[partner.color]}`}
+            aria-labelledby={`${partner.name.toLowerCase()}-title`}
+          >
+            <div className={styles.partnerTop}>
+              <span className={styles.partnerIcon}>
+                <Image
+                  src={partner.logo}
+                  alt={`${partner.name} logo`}
+                  width={32}
+                  height={32}
+                />
               </span>
-              <details className={styles.technical}>
-                <summary>
-                  <span>{partner.name}: under the hood</span>
-                  <ChevronDown size={16} aria-hidden="true" />
-                </summary>
-                <div>
-                  <p>{partner.technical}</p>
-                  <a
-                    href={partner.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {partner.link}
-                    <ExternalLink size={13} aria-hidden="true" />
-                    <span className={styles.srOnly}> (opens in a new tab)</span>
-                  </a>
-                </div>
-              </details>
-            </article>
-          );
-        })}
+              <div>
+                <h4
+                  id={`${partner.name.toLowerCase()}-title`}
+                  className={styles.partnerName}
+                >
+                  {partner.name}
+                </h4>
+                <span className={styles.category}>{partner.category}</span>
+              </div>
+            </div>
+            <h5 className={styles.partnerTitle}>{partner.title}</h5>
+            <p>{partner.description}</p>
+            <div className={styles.services}>
+              <h6>What’s available</h6>
+              {partner.integrations.length > 0 && (
+                <ul
+                  className={styles.integrationList}
+                  aria-label={`${partner.name} integrations`}
+                >
+                  {partner.integrations.map((integration) => {
+                    const Icon =
+                      "icon" in integration ? integration.icon : null;
+                    return (
+                      <li key={integration.name}>
+                        {"logo" in integration ? (
+                          <Image
+                            src={integration.logo}
+                            alt=""
+                            width={18}
+                            height={18}
+                          />
+                        ) : (
+                          Icon && <Icon size={18} aria-hidden="true" />
+                        )}
+                        <span>{integration.name}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <p>{partner.services}</p>
+            </div>
+            <ul>
+              {partner.features.map((feature) => (
+                <li key={feature}>
+                  <ArrowRight size={14} aria-hidden="true" />
+                  <span>{feature}</span>
+                </li>
+              ))}
+            </ul>
+            <div className={styles.example}>
+              <h6>Try asking</h6>
+              <blockquote>“{partner.example}”</blockquote>
+              <p>{partner.outcome}</p>
+            </div>
+            <span className={styles.availability}>{partner.availability}</span>
+          </article>
+        ))}
       </div>
 
-      <div className={styles.engineering}>
+      <section className={styles.engineering} aria-labelledby="machinery-title">
         <div className={styles.engineeringIntro}>
           <span className={styles.eyebrow}>
             <Terminal size={16} aria-hidden="true" /> FOR THE CURIOUS MINDS
           </span>
-          <h3>A peek at the machinery.</h3>
+          <h3 id="machinery-title">A peek at the machinery.</h3>
           <p>Real files. Real tools. A few details worth knowing.</p>
         </div>
         <div className={styles.engineeringDetails}>
@@ -363,8 +429,31 @@ export function BigPossibilities() {
               </a>
             </div>
           </details>
+          {partners.map((partner) => (
+            <details key={partner.name}>
+              <summary>
+                <span>
+                  <Image src={partner.logo} alt="" width={18} height={18} />{" "}
+                  {partner.name}: under the hood
+                </span>
+                <ChevronDown size={17} aria-hidden="true" />
+              </summary>
+              <div>
+                <p>{partner.technical}</p>
+                <a
+                  href={partner.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {partner.link}
+                  <ExternalLink size={13} aria-hidden="true" />
+                  <span className={styles.srOnly}> (opens in a new tab)</span>
+                </a>
+              </div>
+            </details>
+          ))}
         </div>
-      </div>
+      </section>
     </section>
   );
 }

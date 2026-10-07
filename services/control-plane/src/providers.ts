@@ -1,11 +1,70 @@
 import type {
   Connection,
+  ComputerMetrics,
   Cron,
   CronRun,
   Session,
   Toolkit,
+  FileEntry,
+  DirectoryListing,
 } from "@boundless/shared";
-import { HttpError } from "./security";
+import { HttpError, shellQuote } from "./security";
+import { z } from "zod";
+import {
+  filePath,
+  fileStatScript,
+  directoryStatScript,
+  uploadDirectory,
+} from "./file-transfer";
+import { posix } from "node:path";
+
+export type SignedPortUrl = { url: string; port: number; expires_at: number };
+export type PublicPortUrl = {
+  url: string;
+  port: number;
+  label?: string | null;
+  created?: number;
+};
+const metricPoints = z
+  .array(
+    z.tuple([
+      z.number().finite().nonnegative(),
+      z.number().finite().nonnegative(),
+    ]),
+  )
+  .max(10000);
+const metricsSchema = z.object({
+  series: z.object({
+    cpu_cores: metricPoints,
+    memory_bytes: metricPoints,
+    disk_bytes: metricPoints,
+  }),
+  limits: z.object({
+    cpu_cores: z.number().finite().nonnegative(),
+    memory_bytes: z.number().finite().nonnegative(),
+    disk_bytes: z.number().finite().nonnegative(),
+  }),
+  hours: z.number().int().positive(),
+  step_seconds: z.number().int().positive(),
+  fetched_at: z.number().int().nonnegative(),
+});
+export function validatePortUrl(value: string) {
+  const url = new URL(value);
+  if (
+    url.protocol !== "https:" ||
+    url.username ||
+    url.password ||
+    url.port ||
+    url.hash ||
+    !/^[a-z0-9-]+\.agent37\.(app|com)$/.test(url.hostname)
+  )
+    throw new HttpError(
+      502,
+      "invalid_service_url",
+      "Unexpected service address.",
+    );
+  return url;
+}
 
 export class ProviderError extends HttpError {
   constructor(
@@ -79,11 +138,29 @@ export interface AgentProvider {
     modified?: number,
   ): Promise<void>;
   responses(id: string, body: Record<string, unknown>): Promise<Response>;
+  statFile(id: string, path: string): Promise<FileEntry>;
+  listDirectories(id: string, path: string): Promise<DirectoryListing>;
+  writeBinary(id: string, path: string, bytes: Uint8Array): Promise<FileEntry>;
+  downloadFile(id: string, path: string): Promise<Response>;
   stream(id: string, responseId: string): Promise<Response>;
   cancel(id: string, responseId: string): Promise<void>;
   session(id: string, sessionId: string): Promise<Session>;
   sessions(id: string): Promise<any[]>;
   desktop(id: string): Promise<{ ws: string }>;
+  signedUrl(
+    id: string,
+    port: number,
+    ttlSeconds: number,
+  ): Promise<SignedPortUrl>;
+  publicPorts(id: string): Promise<PublicPortUrl[]>;
+  createPublicPort(
+    id: string,
+    port: number,
+    label: string,
+  ): Promise<PublicPortUrl>;
+  removePublicPort(id: string, port: number): Promise<void>;
+  metrics(id: string): Promise<ComputerMetrics>;
+  checkService(id: string, port: number): Promise<boolean>;
   crons(id: string): Promise<Cron[]>;
   createCron(id: string, body: Record<string, unknown>): Promise<Cron>;
   patchCron(
@@ -237,6 +314,99 @@ export class Agent37 implements AgentProvider {
       body: JSON.stringify(body),
     });
   }
+  async listDirectories(id: string, path: string): Promise<DirectoryListing> {
+    path = uploadDirectory(path);
+    const result = await this.exec(
+      id,
+      `node -e ${shellQuote(directoryStatScript)} ${shellQuote(Buffer.from(path).toString("base64url"))}`,
+    );
+    const checked = JSON.parse(result.stdout);
+    if (result.exit_code)
+      throw new HttpError(
+        checked.code === "directory_not_found" ? 404 : 400,
+        checked.code,
+        checked.error,
+      );
+    if (checked.path !== path)
+      throw new HttpError(
+        502,
+        "invalid_directory_listing",
+        "The computer returned an unexpected folder.",
+      );
+    const listing = z
+      .object({
+        path: z.literal(path),
+        entries: z
+          .array(
+            z.object({
+              name: z.string(),
+              path: z.string(),
+              hidden: z.boolean(),
+              type: z.enum(["file", "directory", "symlink", "other"]),
+            }),
+          )
+          .max(1000),
+        truncated: z.boolean(),
+      })
+      .parse(
+        await this.json(
+          this.agent(id, `/files?${new URLSearchParams({ path })}`),
+        ),
+      );
+    const parent = posix.dirname(path);
+    return {
+      path,
+      parentPath: ["/home/node", "/home/linuxbrew"].includes(path)
+        ? null
+        : parent,
+      directories: listing.entries
+        .filter(
+          (entry) =>
+            entry.type === "directory" &&
+            !/[\x00-\x1f/\\]/.test(entry.name) &&
+            !["", ".", ".."].includes(entry.name) &&
+            entry.path === `${path}/${entry.name}`,
+        )
+        .map(({ name, path, hidden }) => ({ name, path, hidden })),
+      truncated: listing.truncated,
+    };
+  }
+  async statFile(id: string, path: string): Promise<FileEntry> {
+    const result = await this.exec(
+      id,
+      `node -e ${shellQuote(fileStatScript)} ${shellQuote(Buffer.from(filePath(path)).toString("base64url"))}`,
+    );
+    if (result.exit_code)
+      throw new HttpError(
+        404,
+        "file_not_found",
+        "File not found or not a regular file.",
+      );
+    return JSON.parse(result.stdout);
+  }
+  async writeBinary(
+    id: string,
+    path: string,
+    bytes: Uint8Array,
+  ): Promise<FileEntry> {
+    return this.json(
+      this.agent(
+        id,
+        `/files/content?path=${encodeURIComponent(filePath(path))}`,
+        {
+          method: "PUT",
+          body: new Uint8Array(bytes),
+          headers: { "Content-Type": "application/octet-stream" },
+        },
+      ),
+    );
+  }
+  downloadFile(id: string, path: string) {
+    return this.agent(
+      id,
+      `/files/content?${new URLSearchParams({ path: filePath(path), disposition: "attachment" })}`,
+    );
+  }
   stream(id: string, responseId: string) {
     return this.agent(
       id,
@@ -260,25 +430,112 @@ export class Agent37 implements AgentProvider {
     return (await this.json(this.agent(id, "/sessions"))).data;
   }
   async desktop(id: string) {
-    const signed = await this.json(
-      this.host(`/instances/${id}/signed-url`, {
-        method: "POST",
-        body: JSON.stringify({ port: 6901, ttl_seconds: 60 }),
-      }),
-    );
+    const signed = await this.signedUrl(id, 6901, 60);
     const url = new URL(signed.url);
-    if (
-      !url.hostname.endsWith(".agent37.app") &&
-      !url.hostname.endsWith(".agent37.com")
-    )
-      throw new HttpError(
-        502,
-        "invalid_desktop_url",
-        "Unexpected desktop address.",
-      );
     return {
       ws: `wss://${url.host}/websockify?a37_token=${encodeURIComponent(url.searchParams.get("a37_token") || "")}`,
     };
+  }
+  async signedUrl(
+    id: string,
+    port: number,
+    ttlSeconds: number,
+  ): Promise<SignedPortUrl> {
+    const data = await this.json(
+      this.host(`/instances/${id}/signed-url`, {
+        method: "POST",
+        body: JSON.stringify({ port, ttl_seconds: ttlSeconds }),
+      }),
+    );
+    const url = validatePortUrl(data.url);
+    if (
+      url.hostname !== `${id}-${port}.agent37.app` &&
+      url.hostname !== `${id}-${port}.agent37.com`
+    )
+      throw new HttpError(
+        502,
+        "invalid_service_url",
+        "Unexpected service address.",
+      );
+    if (
+      !url.searchParams.get("a37_token") ||
+      data.port !== port ||
+      !Number.isSafeInteger(data.expires_at) ||
+      data.expires_at <= Date.now() / 1000 ||
+      data.expires_at > Date.now() / 1000 + ttlSeconds + 60
+    )
+      throw new HttpError(
+        502,
+        "invalid_service_url",
+        "Invalid service access response.",
+      );
+    return { url: url.toString(), port, expires_at: data.expires_at };
+  }
+  async publicPorts(id: string): Promise<PublicPortUrl[]> {
+    const data = await this.json(this.host(`/instances/${id}/public-ports`));
+    return z
+      .array(
+        z.object({
+          port: z.number().int().min(1).max(65535),
+          url: z.string(),
+          label: z.string().nullable().optional(),
+          created: z.number().optional(),
+        }),
+      )
+      .max(50)
+      .parse(data.data)
+      .map((row) => ({ ...row, url: validatePortUrl(row.url).toString() }));
+  }
+  async createPublicPort(
+    id: string,
+    port: number,
+    label: string,
+  ): Promise<PublicPortUrl> {
+    const data = await this.json(
+      this.host(`/instances/${id}/public-ports`, {
+        method: "POST",
+        body: JSON.stringify({ port, label }),
+      }),
+    );
+    if (data.port !== port)
+      throw new HttpError(
+        502,
+        "invalid_service_url",
+        "Unexpected service port.",
+      );
+    return { port, url: validatePortUrl(data.url).toString(), label };
+  }
+  async removePublicPort(id: string, port: number) {
+    const data = await this.json(
+      this.host(`/instances/${id}/public-ports/${port}`, { method: "DELETE" }),
+    );
+    if (data.port !== port || data.deleted !== true)
+      throw new HttpError(
+        502,
+        "public_removal_unconfirmed",
+        "Couldn’t confirm the public link was disabled.",
+      );
+  }
+  async metrics(id: string): Promise<ComputerMetrics> {
+    return metricsSchema.parse(
+      await this.json(this.host(`/instances/${id}/metrics?hours=24`)),
+    );
+  }
+  async checkService(id: string, port: number) {
+    // Fixed local HTTP targets, no redirects, bodies, command input, or infrastructure secrets.
+    const script = `const http=require('node:http');const port=Number(process.argv[1]);const probe=host=>new Promise(resolve=>{const req=http.request({host,port,method:'HEAD',path:'/',timeout:2500},res=>{res.destroy();resolve(true)});req.on('timeout',()=>req.destroy());req.on('error',()=>resolve(false));req.end()});(async()=>console.log(JSON.stringify({running:await probe('127.0.0.1')||await probe('::1')})))()`;
+    const result = await this.exec(
+      id,
+      `node -e ${shellQuote(script)} ${shellQuote(String(z.number().int().min(1).max(65535).parse(port)))}`,
+    );
+    if (result.exit_code)
+      throw new HttpError(
+        502,
+        "service_check_failed",
+        "Couldn’t check the service.",
+      );
+    return z.object({ running: z.boolean() }).parse(JSON.parse(result.stdout))
+      .running;
   }
   async crons(id: string) {
     return (await this.json(this.host(`/instances/${id}/crons`))).data;

@@ -17,6 +17,7 @@ import {
   type CronRun,
   type Profile,
   type WorkspaceItem,
+  fileAttachmentText,
 } from "@boundless/shared";
 import type { Config } from "./config";
 import type { Repository } from "./repository";
@@ -26,16 +27,29 @@ import { DEMO_EMAIL, DEMO_NEW_USER, DEMO_USER } from "./demo";
 import { HttpError, hash, matchesHash, token, seal, unseal } from "./security";
 import { boundedSse } from "./streams";
 import { computerBusy, screenForTemplate } from "./computer-maintenance";
+import { registerBetaRoutes } from "./beta";
+import { registerFileRoutes, cleanUploadsLocked } from "./files";
+import { FILE_TRANSFER_VERSION } from "./file-transfer";
+import {
+  registerAgentComputerRoutes,
+  registerComputerRoutes,
+  reconcileComputerLinksLocked,
+  COMPUTER_HELPER_VERSION,
+} from "./computer-services";
 import {
   accessPaused,
   suspensionPending,
   reconcileSuspensionLocked,
 } from "./suspension";
+import type { InvitationEmail } from "./invitations";
 import {
-  requireInvitationEmail,
-  sendInvitationEmail,
-  type InvitationEmail,
-} from "./invitations";
+  isTask,
+  linkTaskSession,
+  ownedTask,
+  sessionIdSchema,
+  taskHistory,
+  WORKSPACE_HELPER_VERSION,
+} from "./task-sessions";
 
 export type Queue = {
   send(
@@ -62,10 +76,6 @@ const remoteId = z.string().regex(/^[a-f0-9]{32}$/);
 const cronId = z.string().regex(/^[a-f0-9]{12}$/);
 const date = () => new Date().toISOString();
 const emailSchema = z.string().trim().toLowerCase().max(254).pipe(z.email());
-const betaLease = (email: string) => {
-  const value = hash(`beta:${email}`);
-  return `${value.slice(0, 8)}-${value.slice(8, 12)}-4${value.slice(13, 16)}-8${value.slice(17, 20)}-${value.slice(20, 32)}`;
-};
 
 export async function reconcile(dep: Dependencies, ownerId: string) {
   return dep.repo.locked(ownerId, () => reconcileLocked(dep, ownerId));
@@ -74,10 +84,28 @@ export async function reconcile(dep: Dependencies, ownerId: string) {
 // The job worker already holds the customer lease through job completion.
 export async function reconcileLocked(dep: Dependencies, ownerId: string) {
   const agent = await dep.repo.agent(ownerId);
+  await reconcileComputerLinksLocked(dep, ownerId, true);
   if (agent && suspensionPending(agent))
     await reconcileSuspensionLocked(dep, agent);
   if (!agent?.instanceId || agent.status !== "ready") return;
+  if (
+    !computerBusy(agent) &&
+    (await reconcileComputerLinksLocked(dep, ownerId))
+  )
+    return true;
   if (accessPaused(agent) || computerBusy(agent)) return;
+  if (
+    (agent.computerHelperVersion || 0) < COMPUTER_HELPER_VERSION ||
+    (agent.workspaceHelperVersion || 0) < WORKSPACE_HELPER_VERSION ||
+    (agent.fileTransferVersion || 0) < FILE_TRANSFER_VERSION
+  ) {
+    const profile = await dep.repo.profile(ownerId);
+    if (profile) {
+      await dep.lifecycle.configurePersona(profile, agent);
+      await dep.repo.saveAgent(agent);
+    }
+  }
+  await cleanUploadsLocked(dep, ownerId, agent.instanceId);
   const archived = await dep.repo.archived(ownerId);
   const pending = new Map(
     archived
@@ -180,7 +208,12 @@ export function createApp(dep: Dependencies) {
       exposedHeaders: ["Content-Type"],
     }),
   );
-  app.use(express.json({ limit: "96kb" }));
+  const json = express.json({ limit: "96kb" });
+  app.use((req, res, next) =>
+    /^\/api\/files\/uploads\/[^/]+\/chunks\/[^/]+$/.test(req.path)
+      ? next()
+      : json(req, res, next),
+  );
   app.use((_req, res, next) => {
     res.locals.startedAt = Date.now();
     res.set("Cache-Control", "no-store");
@@ -220,15 +253,17 @@ export function createApp(dep: Dependencies) {
     }),
   );
 
+  registerAgentComputerRoutes(app, dep);
   app.post("/api/agent/workspace", async (req, res) => {
     const body = z
       .object({
         instance_id: z.string().regex(/^[a-z0-9]{10}$/),
         event_id: uuid,
-        command: z.enum(["list", "save", "notify"]),
+        command: z.enum(["list", "save", "notify", "link", "history"]),
         item: itemSchema.optional(),
         text: z.string().max(10000).optional(),
-        session_id: remoteId.optional(),
+        session_id: sessionIdSchema.optional(),
+        task_id: uuid.optional(),
       })
       .parse(req.body);
     const agent = await repo.byInstance(body.instance_id);
@@ -243,6 +278,19 @@ export function createApp(dep: Dependencies) {
       throw new HttpError(403, "forbidden", "Callback authentication failed.");
     if (body.command === "list")
       return res.json({ items: await repo.items(agent.ownerId) });
+    if (body.command === "history") {
+      if (!body.task_id)
+        throw new HttpError(400, "invalid_request", "A task id is required.");
+      return res.json(
+        await taskHistory(
+          repo,
+          a37,
+          { ...agent, instanceId: body.instance_id },
+          body.task_id,
+          body.session_id,
+        ),
+      );
+    }
     if (body.command === "notify") {
       if (!body.text?.trim())
         throw new HttpError(
@@ -260,19 +308,54 @@ export function createApp(dep: Dependencies) {
       await queue.send("reconcile", agent.ownerId);
       return res.json({ ok: true });
     }
-    if (!body.item)
-      throw new HttpError(400, "invalid_request", "An item is required.");
-    const previous = body.item.id
-      ? await repo.item(agent.ownerId, body.item.id)
-      : null;
-    const item: WorkspaceItem = {
-      ...body.item,
-      id: body.item.id || body.event_id,
-      ownerId: agent.ownerId,
-      createdAt: previous?.createdAt || date(),
-      updatedAt: date(),
-    };
-    await repo.saveItem(item);
+    const item = await repo.locked(agent.ownerId, async () => {
+      const current = await repo.byInstance(body.instance_id);
+      if (
+        !current ||
+        current.status !== "ready" ||
+        accessPaused(current) ||
+        !matchesHash(credential, current.callbackHash)
+      )
+        throw new HttpError(
+          403,
+          "forbidden",
+          "Callback authentication failed.",
+        );
+      if (body.command === "link") {
+        if (!body.task_id || !body.session_id)
+          throw new HttpError(
+            400,
+            "invalid_request",
+            "A task id and session id are required.",
+          );
+        return linkTaskSession(
+          repo,
+          await ownedTask(repo, current.ownerId, body.task_id),
+          body.instance_id,
+          body.session_id,
+        );
+      }
+      if (!body.item)
+        throw new HttpError(400, "invalid_request", "An item is required.");
+      const id = body.item.id || body.event_id;
+      const previous = await repo.item(current.ownerId, id);
+      if (body.item.id && !previous)
+        throw new HttpError(404, "not_found", "Item not found.");
+      const saved: WorkspaceItem = {
+        ...body.item,
+        id,
+        ownerId: current.ownerId,
+        createdAt: previous?.createdAt || date(),
+        updatedAt: date(),
+        ...(previous?.sessionLinks
+          ? { sessionLinks: previous.sessionLinks }
+          : {}),
+      };
+      await repo.saveItem(saved);
+      return body.session_id && isTask(saved)
+        ? linkTaskSession(repo, saved, body.instance_id, body.session_id)
+        : saved;
+    });
     res.json({ item });
   });
 
@@ -306,6 +389,7 @@ export function createApp(dep: Dependencies) {
     : createClient(config.supabaseUrl, config.supabaseKey, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
+  registerBetaRoutes(app, dep, authClient);
   app.use("/api", async (req, _res, next) => {
     const credential =
       req.headers.authorization?.replace(/^Bearer\s+/i, "") || "";
@@ -379,6 +463,8 @@ export function createApp(dep: Dependencies) {
     if (!actor(req).operator)
       throw new HttpError(403, "forbidden", "Operator access is required.");
   }
+  registerComputerRoutes(app, dep, (req) => actor(req).id, account);
+  registerFileRoutes(app, dep, (req) => actor(req).id, ready);
 
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);
@@ -522,22 +608,38 @@ export function createApp(dep: Dependencies) {
   app.post("/api/items", async (req, res) => {
     await account(req);
     const input = itemSchema.parse(req.body);
-    const prior = input.id ? await repo.item(actor(req).id, input.id) : null;
-    if (input.id && !prior)
-      throw new HttpError(404, "not_found", "Item not found.");
-    const item: WorkspaceItem = {
-      ...input,
-      ownerId: actor(req).id,
-      id: input.id || randomUUID(),
-      createdAt: prior?.createdAt || date(),
-      updatedAt: date(),
-    };
-    await repo.saveItem(item);
+    const item = await repo.locked(actor(req).id, async () => {
+      const prior = input.id ? await repo.item(actor(req).id, input.id) : null;
+      if (input.id && !prior)
+        throw new HttpError(404, "not_found", "Item not found.");
+      const item: WorkspaceItem = {
+        ...input,
+        ownerId: actor(req).id,
+        id: input.id || randomUUID(),
+        createdAt: prior?.createdAt || date(),
+        updatedAt: date(),
+        ...(prior?.sessionLinks ? { sessionLinks: prior.sessionLinks } : {}),
+      };
+      await repo.saveItem(item);
+      return item;
+    });
     res.json({ item });
+  });
+  app.get("/api/items/:id/history", async (req, res) => {
+    const agent = await ready(req);
+    const sessionId =
+      req.query.sessionId === undefined
+        ? undefined
+        : sessionIdSchema.parse(req.query.sessionId);
+    res.json(
+      await taskHistory(repo, a37, agent, uuid.parse(req.params.id), sessionId),
+    );
   });
   app.delete("/api/items/:id", async (req, res) => {
     await account(req);
-    await repo.deleteItem(actor(req).id, uuid.parse(req.params.id));
+    await repo.locked(actor(req).id, () =>
+      repo.deleteItem(actor(req).id, uuid.parse(req.params.id)),
+    );
     res.json({ deleted: true });
   });
   app.get("/api/notifications", async (req, res) => {
@@ -648,29 +750,65 @@ export function createApp(dep: Dependencies) {
     const agent = await ready(req);
     const body = z
       .object({
-        input: z.string().trim().min(1).max(30000),
+        input: z.string().trim().max(30000).default(""),
+        files: z
+          .array(z.string().startsWith("/").max(4096))
+          .max(100)
+          .default([]),
         takeover: z.boolean().optional(),
         notificationId: uuid.optional(),
       })
       .parse(req.body);
-    let input = body.input;
+    if (!body.input && !body.files.length)
+      throw new HttpError(
+        400,
+        "empty_turn",
+        "Write a message or attach a file.",
+      );
+    const context: string[] = [];
     if (body.takeover)
-      input = `App context (from Boundless): Your person used the computer and returned control. Inspect the browser before continuing.\nEnd of app context.\n\n${input}`;
+      context.push(
+        "Your person used the computer and returned control. Inspect the browser before continuing.",
+      );
     if (body.notificationId) {
       const note = (await repo.notifications(agent.ownerId)).find(
         (row) => row.id === body.notificationId,
       );
       if (!note)
         throw new HttpError(404, "not_found", "Notification not found.");
-      input = `App context (from Boundless): Your person is replying to this check-in: ${JSON.stringify(note.text)}\nEnd of app context.\n\n${input}`;
+      context.push(
+        `Your person is replying to this check-in: ${JSON.stringify(note.text)}`,
+      );
     }
     const upstream = await repo.locked(agent.ownerId, async () => {
       const current = await ready(req);
+      const files = [];
+      for (const path of body.files) {
+        const file = await a37.statFile(current.instanceId, path);
+        if (file.path !== path)
+          throw new HttpError(
+            400,
+            "invalid_path",
+            "Use the exact saved path returned by the upload.",
+          );
+        files.push(file);
+      }
+      if (current.mainSessionId)
+        context.push(
+          `Current web conversation id: ${current.mainSessionId}. When saving or linking tasks with workspace.mjs, pass --session-id ${current.mainSessionId}. For work involving an existing task, use workspace.mjs list, history TASK_ID, and link TASK_ID to retrieve context across its conversations and associate this one.`,
+        );
+      const message =
+        (body.input || "I’ve uploaded these files.") +
+        (files.length ? fileAttachmentText(current.instanceId, files) : "");
+      const input = context.length
+        ? `App context (from Boundless):\n${context.join("\n")}\nEnd of app context.\n\n${message}`
+        : message;
       return a37.responses(current.instanceId, {
         input,
         session_id: current.mainSessionId,
         stream: true,
         agent: "hermes",
+        ...(body.files.length ? { files: body.files } : {}),
       });
     });
     await relay(req, res, upstream, agent);
@@ -701,29 +839,39 @@ export function createApp(dep: Dependencies) {
         agent.computerScreen || screenForTemplate(instance.template || ""),
     });
   });
-  app.get("/api/computer/maintenance", async (req, res) => {
-    operator(req);
-    const agent = await ready(req, true);
-    if (computerBusy(agent))
-      await queue.recover?.(agent.ownerId).catch(() => {});
-    const instance = await a37.instance(agent.instanceId);
-    const {
-      bootBefore: _boot,
-      acknowledged: _ack,
-      ...operation
-    } = agent.computerOperation || {};
-    res.json({
-      installedTemplate: instance.template,
-      availableTemplate: config.desktopTemplate,
-      updateAvailable: instance.template !== config.desktopTemplate,
-      instanceStatus: instance.status,
-      screen:
-        agent.computerScreen || screenForTemplate(instance.template || ""),
-      operation: agent.computerOperation ? operation : null,
-    });
-  });
+  app.get(
+    ["/api/computer/maintenance", "/api/computer/status"],
+    async (req, res) => {
+      await account(req);
+      const agent = await repo.agent(actor(req).id);
+      if (!agent?.instanceId || agent.status !== "ready")
+        throw new HttpError(
+          409,
+          "agent_not_ready",
+          "The computer is not ready.",
+        );
+      if (computerBusy(agent))
+        await queue.recover?.(agent.ownerId).catch(() => {});
+      const instance = await a37.instance(agent.instanceId);
+      const {
+        bootBefore: _boot,
+        acknowledged: _ack,
+        ...operation
+      } = agent.computerOperation || {};
+      res.json({
+        installedTemplate: instance.template,
+        availableTemplate: config.desktopTemplate,
+        updateAvailable: instance.template !== config.desktopTemplate,
+        instanceStatus: instance.status,
+        canManage: !accessPaused(agent),
+        suspended: accessPaused(agent),
+        screen:
+          agent.computerScreen || screenForTemplate(instance.template || ""),
+        operation: agent.computerOperation ? operation : null,
+      });
+    },
+  );
   app.post("/api/computer/maintenance", async (req, res) => {
-    operator(req);
     const { action } = z
       .object({ action: z.enum(["restart", "update"]) })
       .strict()
@@ -1064,204 +1212,7 @@ export function createApp(dep: Dependencies) {
           ? publicAgent(agents.find((agent) => agent.ownerId === profile.id)!)
           : null,
       })),
-      invitations: await repo.invitations(),
     });
-  });
-  app.post("/api/operator/invitations", async (req, res) => {
-    operator(req);
-    const { email } = z.object({ email: z.email() }).parse(req.body);
-    const invitation = token();
-    await repo.createInvitation(
-      email,
-      hash(invitation),
-      new Date(Date.now() + 7 * 86400000).toISOString(),
-    );
-    res
-      .status(201)
-      .json({ url: `${config.webOrigin}/?invite=${invitation}`, email });
-  });
-  app.get("/api/operator/invitations", async (req, res) => {
-    operator(req);
-    const invitations = await repo.invitations();
-    const betaRequests = await repo.betaRequests();
-    const acceptedOwners = [
-      ...new Set(
-        invitations.map((row) => row.used_by || row.usedBy).filter(Boolean),
-      ),
-    ];
-    const enrolledOwners = new Set(
-      (
-        await Promise.all(
-          acceptedOwners.map(async (id) =>
-            (await repo.profile(id)) ? id : null,
-          ),
-        )
-      ).filter(Boolean),
-    );
-    const accountEmails = new Set<string>(),
-      accountIds = new Set<string>();
-    if (invitations.length || betaRequests.length) {
-      if (config.demo) {
-        for (const profile of await repo.customers()) {
-          accountEmails.add(profile.email.toLowerCase());
-          accountIds.add(profile.id);
-        }
-      } else {
-        // Only server-side Auth records establish whether an account currently exists.
-        for (let page = 1; ; page++) {
-          const { data, error } = await authClient!.auth.admin.listUsers({
-            page,
-            perPage: 1000,
-          });
-          if (error)
-            throw new HttpError(
-              502,
-              "account_lookup_failed",
-              "Couldn’t check invited user accounts. Please refresh.",
-            );
-          for (const user of data.users) {
-            if (user.email) accountEmails.add(user.email.toLowerCase());
-            accountIds.add(user.id);
-          }
-          if (data.users.length < 1000) break;
-        }
-      }
-    }
-    const people = new Map<
-      string,
-      {
-        email: string;
-        accepted: boolean;
-        enrolled: boolean;
-        accountExists: boolean;
-        expiresAt: string;
-      }
-    >();
-    for (const invitation of invitations) {
-      const email = invitation.email.toLowerCase();
-      const usedBy = invitation.used_by || invitation.usedBy;
-      const expiresAt = invitation.expires_at || invitation.expiresAt;
-      const existing = people.get(email);
-      people.set(email, {
-        email,
-        accepted: Boolean(usedBy) || Boolean(existing?.accepted),
-        enrolled: enrolledOwners.has(usedBy) || Boolean(existing?.enrolled),
-        accountExists:
-          accountEmails.has(email) ||
-          accountIds.has(usedBy) ||
-          Boolean(existing?.accountExists),
-        expiresAt:
-          !existing || Date.parse(expiresAt) > Date.parse(existing.expiresAt)
-            ? expiresAt
-            : existing.expiresAt,
-      });
-    }
-    res.json({
-      invitations: await Promise.all(
-        [
-          ...new Set([
-            ...betaRequests.map((row) => row.email),
-            ...people.keys(),
-          ]),
-        ].map(async (email) => {
-          const person = people.get(email),
-            request = betaRequests.find((row) => row.email === email);
-          return {
-            email,
-            accountExists: person?.accountExists || accountEmails.has(email),
-            // A new Auth account with this email is not the deleted customer's enrollment.
-            canReinvite: Boolean(person?.accepted && !person.enrolled),
-            requestedAt: request?.createdAt,
-            approvedAt: request?.approvedAt,
-            sentAt: request?.sentAt,
-            status:
-              person?.accepted && !(await repo.pendingInvitation(email))
-                ? "accepted"
-                : request?.approvedAt && !request.sentAt
-                  ? "approved"
-                  : !person
-                    ? "awaiting_review"
-                    : Date.parse(person.expiresAt) <= Date.now()
-                      ? "expired"
-                      : "pending",
-          };
-        }),
-      ),
-    });
-  });
-  app.post("/api/operator/beta", async (req, res) => {
-    operator(req);
-    const { email } = z.object({ email: emailSchema }).parse(req.body);
-    await repo.addBetaRequest(email);
-    res.status(201).json({ email });
-  });
-  app.post("/api/operator/invitations/send", async (req, res) => {
-    operator(req);
-    const { email } = z.object({ email: emailSchema }).parse(req.body);
-    requireInvitationEmail(config);
-    await repo.locked(betaLease(email), async () => {
-      await repo.addBetaRequest(email);
-      const request = (await repo.betaRequests()).find(
-        (row) => row.email === email,
-      )!;
-      const previous = (await repo.invitations()).filter(
-        (row) => row.email === email,
-      );
-      const acceptedOwners = previous
-        .map((row) => row.used_by || row.usedBy)
-        .filter(Boolean);
-      const activeCustomers = await Promise.all(
-        acceptedOwners.map((id) => repo.profile(id)),
-      );
-      if (activeCustomers.some(Boolean))
-        throw new HttpError(
-          409,
-          "invitation_accepted",
-          "This email has already accepted an invitation. They can use the sign-in page.",
-        );
-      const key = config.demo ? "a".repeat(64) : config.encryptionKey;
-      const consumed =
-        !!request.invitationBox &&
-        previous.some(
-          (row) =>
-            row.token_hash === hash(unseal(request.invitationBox!, key)) &&
-            (row.used_by || row.usedBy),
-        );
-      if (
-        request.sentAt &&
-        !consumed &&
-        Date.parse(request.expiresAt || "") > Date.now()
-      )
-        return;
-      if (consumed) {
-        // A new approval creates a new token; historical tokens remain consumed.
-        request.invitationBox = undefined;
-        request.approvedAt = undefined;
-        request.approvedBy = undefined;
-      }
-      request.approvedAt ||= date();
-      request.approvedBy ||= actor(req).id;
-      if (
-        !request.invitationBox ||
-        Date.parse(request.expiresAt || "") <= Date.now()
-      ) {
-        request.invitationBox = seal(token(), key);
-        request.expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-        request.sentAt = undefined;
-      }
-      // Persist approval and the retry credential before any delivery.
-      await repo.saveBetaRequest(request);
-      const invitation = unseal(request.invitationBox, key),
-        digest = hash(invitation);
-      await repo.createInvitation(email, digest, request.expiresAt!);
-      const url = `${config.webOrigin}/signin?invite=${invitation}&email=${encodeURIComponent(email)}`;
-      await (
-        dep.invitationEmail || ((input) => sendInvitationEmail(config, input))
-      )({ email, url, digest });
-      request.sentAt = date();
-      await repo.saveBetaRequest(request);
-    });
-    res.status(201).json({ email, sent: !config.demo, demo: config.demo });
   });
   app.post("/api/operator/:ownerId/retry", async (req, res) => {
     operator(req);
@@ -1340,6 +1291,16 @@ export function createApp(dep: Dependencies) {
       _next: express.NextFunction,
     ) => {
       if (res.headersSent) return res.end();
+      if (error?.type === "entity.too.large")
+        return res
+          .status(413)
+          .json({
+            error: {
+              code: "payload_too_large",
+              message:
+                "This request is too large. Upload file pieces of at most 2 MiB.",
+            },
+          });
       if (error instanceof z.ZodError)
         return res.status(400).json({
           error: {

@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import {
   useCallback,
   useEffect,
@@ -25,13 +24,14 @@ import {
   LogOut,
   Menu,
   MessageCircle,
+  MessagesSquare,
   Monitor,
+  Paperclip,
   Plus,
   Puzzle,
   RefreshCw,
   Send,
   Settings as SettingsIcon,
-  ShieldCheck,
   Sparkles,
   Square,
   X,
@@ -42,6 +42,7 @@ import {
   phoneSchema,
   profileSchema,
   visibleMessage,
+  fileAttachmentText,
   type Conversation,
   type Cron,
   type CronRun,
@@ -55,9 +56,15 @@ import {
 import { api, credential, demo, signOut, stream, supabase } from "@/lib/client";
 import { Brand, Companion } from "@/components/companion";
 import { Computer } from "@/components/computer";
+import { ComputerWorkspace } from "@/components/computer-workspace";
 import { PhoneField } from "@/components/phone-field";
 import { FeatureOverview } from "@/components/feature-overview";
 import { PublicEntry } from "@/components/public-entry";
+import { ChatUploads, useChatUploads } from "@/components/chat-uploads";
+import {
+  downloadDestination,
+  DOWNLOAD_RETURN_KEY,
+} from "@/lib/download-destination";
 import {
   Apps,
   Markdown,
@@ -68,7 +75,8 @@ import {
   Wiki,
 } from "@/components/views";
 
-type Tab = "chat" | "tasks" | "wiki" | "routines" | "apps" | "settings";
+type Tab =
+  "chat" | "tasks" | "wiki" | "routines" | "apps" | "computer" | "settings";
 const nav = [
   { id: "chat", label: "Your conversation", icon: MessageCircle },
   { id: "tasks", label: "Tasks", icon: CheckCircle2 },
@@ -89,6 +97,7 @@ export default function Home() {
   const [operator, setOperator] = useState(false);
   const [accountEmail, setAccountEmail] = useState("");
   const [tab, setTab] = useState<Tab>("chat");
+  const [computerRequestId, setComputerRequestId] = useState<string>();
   const [mobileNav, setMobileNav] = useState(false);
   const [items, setItems] = useState<WorkspaceItem[]>([]);
   const [notes, setNotes] = useState<Notification[]>([]);
@@ -104,6 +113,7 @@ export default function Home() {
   const [routinePrompt, setRoutinePrompt] = useState<string | undefined>();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
+  const [uploadOptionsOpen, setUploadOptionsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [liveText, setLiveText] = useState("");
   const [activity, setActivity] = useState("");
@@ -130,6 +140,12 @@ export default function Home() {
   const onError = useCallback((message: string) => say(message, true), [say]);
   const onSuccess = useCallback((message: string) => say(message), [say]);
   const feedback = { onError, onSuccess };
+  const uploads = useChatUploads(
+    agent?.ownerId,
+    agent?.instanceId,
+    signedIn && agent?.status === "ready" && !agent?.suspended,
+    onError,
+  );
   const loadAccount = useCallback(async () => {
     try {
       const auth = await credential();
@@ -158,6 +174,11 @@ export default function Home() {
       setProfile(data.profile);
       setAgent(data.agent);
       setOperator(data.operator);
+      const download = downloadDestination(
+        localStorage.getItem(DOWNLOAD_RETURN_KEY),
+      );
+      localStorage.removeItem(DOWNLOAD_RETURN_KEY);
+      if (download !== "/") window.location.assign(download);
     } catch (error) {
       setSignedIn(false);
       if ((error as any).status === 401) await signOut("local");
@@ -290,9 +311,16 @@ export default function Home() {
     }
   }, []);
   async function send(text = input) {
-    if (!text.trim() || busy || selectedSession) return;
-    setInput("");
-    setMessages((current) => [...current, { role: "user", content: text }]);
+    if (
+      (!text.trim() && !uploads.files.length) ||
+      uploads.blocked ||
+      busy ||
+      selectedSession
+    )
+      return;
+    const attachmentIds = uploads.items.map((row) => row.id);
+    const files = uploads.files;
+    let accepted = false;
     setBusy(true);
     setInterrupted(false);
     setLiveText("");
@@ -302,10 +330,29 @@ export default function Home() {
         "/responses",
         {
           input: text,
+          files: files.map((file) => file.path),
           takeover: takeoverContext.current,
           notificationId: replyTo?.id,
         },
-        onEvent,
+        (event) => {
+          if (event.event === "response.created" && !accepted) {
+            accepted = true;
+            setInput("");
+            uploads.accepted(attachmentIds);
+            setMessages((current) => [
+              ...current,
+              {
+                role: "user",
+                content:
+                  (text.trim() || "I’ve uploaded these files.") +
+                  fileAttachmentText(agent!.instanceId!, files),
+              },
+            ]);
+            takeoverContext.current = false;
+            setReplyTo(null);
+          }
+          onEvent(event);
+        },
       );
       takeoverContext.current = false;
       setReplyTo(null);
@@ -313,7 +360,7 @@ export default function Home() {
       setLiveText("");
       void refreshWorkspace();
     } catch (error) {
-      setInterrupted(true);
+      setInterrupted(accepted);
       onError(err(error));
     } finally {
       setBusy(false);
@@ -425,7 +472,7 @@ export default function Home() {
     window.location.reload();
   }
 
-  // Keep the public homepage in server HTML; show only the brand while the browser checks the account.
+  // Keep the public homepage in server HTML; show a loading screen while the browser checks the account.
   if (booting)
     return hydrated ? (
       <main
@@ -434,6 +481,7 @@ export default function Home() {
         aria-label="Loading Potato Potential"
       >
         <Brand sizes="(max-width: 384px) calc(100vw - 64px), 320px" />
+        <p>Loading ...</p>
       </main>
     ) : (
       <PublicEntry checkingSession />
@@ -518,15 +566,14 @@ export default function Home() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-note">
-          <span className="tiny-spark">✦</span>
-          <p>
-            A little help.
-            <br />
-            <strong>A lot of possibility.</strong>
-          </p>
-        </div>
         <div className="sidebar-bottom">
+          <button
+            className={`nav-item ${tab === "computer" ? "active" : ""}`}
+            onClick={() => navigate("computer")}
+          >
+            <Monitor size={19} />
+            Computer
+          </button>
           <button
             className={`nav-item ${tab === "settings" ? "active" : ""}`}
             onClick={() => navigate("settings")}
@@ -534,12 +581,6 @@ export default function Home() {
             <SettingsIcon size={18} />
             Settings
           </button>
-          {operator && (
-            <Link className="nav-item" href="/operator/invitations">
-              <ShieldCheck size={18} />
-              Beta operator
-            </Link>
-          )}
           <div className="sidebar-profile">
             <span className="person-avatar">{profile.name.slice(0, 1)}</span>
             <div>
@@ -584,10 +625,17 @@ export default function Home() {
           </div>
           <div className="topbar-actions">
             {demo && <span className="preview-badge">Local preview</span>}
-            <span className="availability">
-              <span className="status-dot" />
-              Here for you
-            </span>
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Channels"
+              title="Channels"
+              aria-haspopup="dialog"
+              aria-expanded={channelsOpen}
+              onClick={() => void showChannels()}
+            >
+              <MessagesSquare size={19} aria-hidden="true" />
+            </button>
             <button
               className={`icon-button notifications-button ${unread ? "has-notifications" : ""}`}
               aria-label="Notifications"
@@ -602,7 +650,27 @@ export default function Home() {
         </header>
         {tab === "chat" ? (
           <div className="conversation-layout">
-            <section className="chat-column">
+            <section
+              className="chat-column"
+              onDragOver={(event) => {
+                if (
+                  !selectedSession &&
+                  !busy &&
+                  event.dataTransfer.types.includes("Files")
+                )
+                  event.preventDefault();
+              }}
+              onDrop={(event) => {
+                if (
+                  !selectedSession &&
+                  !busy &&
+                  event.dataTransfer.files.length
+                ) {
+                  event.preventDefault();
+                  uploads.add(Array.from(event.dataTransfer.files));
+                }
+              }}
+            >
               <div className="chat-heading">
                 <div className="buddy-heading">
                   <div className="buddy-avatar">
@@ -628,19 +696,6 @@ export default function Home() {
                     aria-label="Conversation history"
                   >
                     <History size={18} />
-                  </button>
-                  <button
-                    className="text-button channel-button"
-                    onClick={() => void showChannels()}
-                  >
-                    Channels
-                  </button>
-                  <button
-                    className={`button button-secondary computer-toggle ${showComputer ? "selected" : ""}`}
-                    onClick={() => setShowComputer((value) => !value)}
-                  >
-                    <Monitor size={16} />
-                    <span>Computer</span>
                   </button>
                 </div>
               </div>
@@ -768,6 +823,14 @@ export default function Home() {
                       placeholder={`A thought, a task, a little “what if”…`}
                       aria-label="Message your companion"
                       rows={1}
+                      disabled={busy}
+                      onPaste={(event) => {
+                        const files = Array.from(event.clipboardData.files);
+                        if (files.length) {
+                          event.preventDefault();
+                          uploads.add(files);
+                        }
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" && !event.shiftKey) {
                           event.preventDefault();
@@ -775,29 +838,48 @@ export default function Home() {
                         }
                       }}
                     />
-                    <div className="composer-bottom">
-                      <span>
-                        <Sparkles size={14} />A little help starts here.
-                      </span>
-                      {busy ? (
+                    <ChatUploads
+                      uploads={uploads}
+                      disabled={busy}
+                      expanded={uploadOptionsOpen}
+                      toggle={
                         <button
                           type="button"
-                          className="send-button stop-button"
-                          aria-label="Stop response"
-                          onClick={() => void stop()}
+                          className="icon-button attachment-toggle"
+                          aria-label="Attach files"
+                          title="Attach files"
+                          aria-expanded={uploadOptionsOpen}
+                          aria-controls="chat-upload-options"
+                          disabled={busy}
+                          onClick={() => setUploadOptionsOpen((open) => !open)}
                         >
-                          <Square size={16} />
+                          <Paperclip size={19} aria-hidden="true" />
                         </button>
-                      ) : (
-                        <button
-                          className="send-button"
-                          aria-label="Send message"
-                          disabled={!input.trim()}
-                        >
-                          <ArrowRight size={21} />
-                        </button>
-                      )}
-                    </div>
+                      }
+                      sendButton={
+                        busy ? (
+                          <button
+                            type="button"
+                            className="send-button stop-button"
+                            aria-label="Stop response"
+                            onClick={() => void stop()}
+                          >
+                            <Square size={16} />
+                          </button>
+                        ) : (
+                          <button
+                            className="send-button"
+                            aria-label="Send message"
+                            disabled={
+                              uploads.blocked ||
+                              (!input.trim() && !uploads.files.length)
+                            }
+                          >
+                            <ArrowRight size={21} />
+                          </button>
+                        )
+                      }
+                    />
                   </form>
                   <div className="starter-chips">
                     <button
@@ -845,7 +927,18 @@ export default function Home() {
               ) : (
                 <>
                   <div className="panel-intro">
-                    <span className="eyebrow">YOUR LITTLE TEAM OF TWO</span>
+                    <div className="panel-intro-top">
+                      <span className="eyebrow">YOUR LITTLE TEAM OF TWO</span>
+                      <button
+                        type="button"
+                        className="button button-secondary computer-toggle"
+                        aria-label="Preview computer"
+                        onClick={() => setShowComputer(true)}
+                      >
+                        <Monitor size={16} aria-hidden="true" />
+                        <span>Computer</span>
+                      </button>
+                    </div>
                     <h2>
                       {profile.agentName}’s world <span>✦</span>
                     </h2>
@@ -1014,6 +1107,14 @@ export default function Home() {
               />
             )}{" "}
             {tab === "apps" && <Apps {...feedback} />}{" "}
+            {tab === "computer" && (
+              <ComputerWorkspace
+                profile={profile}
+                onReturn={returnControl}
+                onError={onError}
+                requestId={computerRequestId}
+              />
+            )}
             {tab === "settings" && (
               <Settings
                 profile={profile}
@@ -1080,6 +1181,12 @@ export default function Home() {
                 <button
                   key={note.id}
                   onClick={() => {
+                    if (note.target?.view === "computer") {
+                      setComputerRequestId(note.target.requestId);
+                      navigate("computer");
+                      setNotificationsOpen(false);
+                      return;
+                    }
                     setReplyTo(note);
                     setSelectedSession(null);
                     setTab("chat");

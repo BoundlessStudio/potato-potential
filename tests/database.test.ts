@@ -1,9 +1,42 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 const a = "11111111-1111-4111-8111-111111111111",
   b = "22222222-2222-4222-8222-222222222222";
 let db: PGlite;
+async function computerRows(ownerId: string, instanceId: string) {
+  await db.query("update public.agents set instance_id=$1 where owner_id=$2", [
+    instanceId,
+    ownerId,
+  ]);
+  const service = {
+    ownerId,
+    instanceId,
+    port: 8788,
+    label: "Test service",
+    state: "running",
+    createdAt: new Date().toISOString(),
+  };
+  const request = {
+    id: randomUUID(),
+    ownerId,
+    instanceId,
+    port: 8788,
+    kind: "signed",
+    status: "approved",
+    urlBox: "encrypted-fixture",
+  };
+  await db.query(
+    "insert into public.computer_services(owner_id,instance_id,port,service) values($1,$2,8788,$3)",
+    [ownerId, instanceId, JSON.stringify(service)],
+  );
+  await db.query(
+    "insert into public.computer_link_requests(id,owner_id,instance_id,port,kind,status,created_at,request) values($1,$2,$3,8788,'signed','approved',now(),$4)",
+    [request.id, ownerId, instanceId, JSON.stringify(request)],
+  );
+  return { service, request };
+}
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(
@@ -37,11 +70,92 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
+    await readFile(
+      "supabase/migrations/20261006205152_independent_beta_requests.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      "supabase/migrations/20261006205153_computer_services.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile("supabase/migrations/20261007034424_file_uploads.sql", "utf8"),
+  );
+  await db.exec(
     `insert into auth.users(id) values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
   );
 });
 afterAll(async () => {
   await db.close();
+});
+it("keeps upload records service-only, binds ownership immutably and cascades account removal", async () => {
+  const owner = randomUUID(),
+    id = randomUUID(),
+    instance = "upl1234567";
+  const upload = {
+    id,
+    ownerId: owner,
+    instanceId: instance,
+    state: "uploading",
+    directory: "/home/node/uploads",
+    name: "sample.bin",
+    size: 12,
+    sha256: "a".repeat(64),
+    chunks: {},
+  };
+  await db.query("insert into auth.users(id) values($1)", [owner]);
+  await db.query(
+    "insert into public.customers(id,email,profile) values($1,'upload@example.com','{}')",
+    [owner],
+  );
+  await db.query(
+    "insert into public.agents(owner_id,instance_id,state) values($1,$2,'{}')",
+    [owner, instance],
+  );
+  await db.query(
+    "insert into public.file_uploads(id,owner_id,instance_id,state,expires_at,upload) values($1,$2,$3,'uploading',now()+interval '24 hours',$4)",
+    [id, owner, instance, JSON.stringify(upload)],
+  );
+  for (const role of ["anon", "authenticated"]) {
+    await db.exec(`set role ${role}`);
+    try {
+      await expect(
+        db.query("select * from public.file_uploads"),
+      ).rejects.toThrow("permission denied");
+    } finally {
+      await db.exec("reset role");
+    }
+  }
+  await db.exec("set role service_role");
+  try {
+    expect(
+      (await db.query("select id from public.file_uploads where id=$1", [id]))
+        .rows,
+    ).toHaveLength(1);
+    await expect(
+      db.query(
+        "update public.file_uploads set upload=jsonb_set(upload,'{sha256}','\"changed\"') where id=$1",
+        [id],
+      ),
+    ).rejects.toThrow("upload identity cannot change");
+    await expect(
+      db.query("update public.file_uploads set owner_id=$1 where id=$2", [
+        a,
+        id,
+      ]),
+    ).rejects.toThrow("upload identity cannot change");
+  } finally {
+    await db.exec("reset role");
+  }
+  await db.query("delete from public.customers where id=$1", [owner]);
+  expect(
+    (await db.query("select id from public.file_uploads where id=$1", [id]))
+      .rows,
+  ).toHaveLength(0);
+  await db.query("delete from auth.users where id=$1", [owner]);
 });
 it("keeps the beta review list and approval credentials private from applicants and customers", async () => {
   await db.exec(
@@ -300,7 +414,69 @@ it("leases serialize work and only the owning token can release them", async () 
   ).toHaveLength(0);
 });
 
-it("guards Auth deletion until provider cleanup and erases all owned data atomically", async () => {
+it.each([
+  {
+    name: "both providers outstanding",
+    state: { deletion: { instance: false, identity: false } },
+  },
+  {
+    name: "computer outstanding",
+    state: { deletion: { instance: false, identity: true } },
+  },
+  {
+    name: "identity outstanding",
+    state: { deletion: { instance: true, identity: false } },
+  },
+  { name: "deletion flags absent", state: {} },
+  {
+    name: "computer confirmation absent",
+    state: { deletion: { identity: true } },
+  },
+  {
+    name: "identity confirmation absent",
+    state: { deletion: { instance: true } },
+  },
+])("blocks Auth erasure with $name", async ({ state }) => {
+  const owner = randomUUID();
+  await db.exec("begin");
+  try {
+    await db.query("insert into auth.users(id,email) values($1,$2)", [
+      owner,
+      `${owner}@example.com`,
+    ]);
+    await db.query(
+      "insert into public.customers(id,email,profile) values($1,$2,'{}')",
+      [owner, `${owner}@example.com`],
+    );
+    await db.query("insert into public.agents(owner_id,state) values($1,$2)", [
+      owner,
+      JSON.stringify({ status: "deleting", ...state }),
+    ]);
+    await db.exec("savepoint before_erasure");
+    await expect(
+      db.query("delete from auth.users where id=$1", [owner]),
+    ).rejects.toThrow("provider cleanup must complete");
+    await db.exec("rollback to savepoint before_erasure");
+    expect(
+      (await db.query("select id from auth.users where id=$1", [owner])).rows,
+    ).toEqual([{ id: owner }]);
+    expect(
+      (await db.query("select id from public.customers where id=$1", [owner]))
+        .rows,
+    ).toEqual([{ id: owner }]);
+    expect(
+      (
+        await db.query("select state from public.agents where owner_id=$1", [
+          owner,
+        ])
+      ).rows,
+    ).toEqual([{ state: { status: "deleting", ...state } }]);
+  } finally {
+    await db.exec("rollback");
+  }
+});
+
+it("guards Auth deletion until provider cleanup and erases only the closing account's data atomically", async () => {
   const owner = "cccc1111-1111-4111-8111-111111111111";
   await db.exec(`
     insert into auth.users(id,email) values('${owner}','auth-close@example.com');
@@ -315,8 +491,17 @@ it("guards Auth deletion until provider cleanup and erases all owned data atomic
     insert into public.invitations(email,token_hash,used_by,expires_at) values
       ('profile-close@example.com','close-consumed','${owner}',now()+interval '1 day'),
       ('auth-close@example.com','close-pending',null,now()+interval '1 day');
-    insert into public.beta_requests(email,approved_by) values
-      ('profile-close@example.com','${owner}'),('auth-close@example.com',null),('someone-else@example.com','${owner}');
+    insert into public.beta_requests(email) values
+      ('profile-close@example.com'),('auth-close@example.com'),('someone-else@example.com');
+    insert into public.invitations(email,token_hash,used_by,expires_at) values
+      ('b@example.com','other-pending',null,now()+interval '1 day'),
+      ('b@example.com','other-consumed','${b}',now()+interval '1 day');
+    insert into public.notifications(id,owner_id,note) values(gen_random_uuid(),'${b}','{"text":"Keep this notification"}');
+    insert into public.conversations(owner_id,session_id,conversation) values('${b}','other-session','{"title":"Keep this conversation"}');
+    insert into public.cron_archive(owner_id,run_key,run) values('${b}','other-run','{"name":"Keep this reminder"}');
+    insert into public.application_jobs(owner_id,kind,status) values('${b}','cleanup','completed');
+    select public.claim_customer_lease('${b}',gen_random_uuid());
+    insert into public.beta_requests(email) values('b@example.com');
   `);
   const ownedTables = [
     ["auth.users", "id"],
@@ -328,7 +513,11 @@ it("guards Auth deletion until provider cleanup and erases all owned data atomic
     ["public.cron_archive", "owner_id"],
     ["public.application_jobs", "owner_id"],
     ["public.customer_leases", "owner_id"],
+    ["public.computer_services", "owner_id"],
+    ["public.computer_link_requests", "owner_id"],
   ];
+  await computerRows(owner, "close12345");
+  await computerRows(b, "other12345");
   const counts = async () =>
     Promise.all(
       ownedTables.map(
@@ -341,6 +530,41 @@ it("guards Auth deletion until provider cleanup and erases all owned data atomic
       ),
     );
   const before = await counts();
+  const otherRecords = async () =>
+    Promise.all(
+      ownedTables.map(async ([table, column]) =>
+        (
+          await db.query(`select * from ${table} where ${column}=$1`, [b])
+        ).rows.sort((left, right) =>
+          JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        ),
+      ),
+    );
+  const otherInvitations = async () =>
+    (
+      await db.query(
+        "select * from public.invitations where email='b@example.com' order by token_hash",
+      )
+    ).rows;
+  const otherBeta = async () =>
+    (
+      await db.query(
+        "select * from public.beta_requests where email='b@example.com'",
+      )
+    ).rows;
+  const otherBefore = await otherRecords();
+  const invitationsBefore = await otherInvitations();
+  const betaBefore = await otherBeta();
+  const allBetaBefore = (
+    await db.query("select * from public.beta_requests order by email")
+  ).rows;
+  expect(otherBefore.every((rows) => rows.length > 0)).toBe(true);
+  expect(invitationsBefore).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ token_hash: "other-pending", used_by: null }),
+      expect.objectContaining({ token_hash: "other-consumed", used_by: b }),
+    ]),
+  );
   expect(before.every((count) => count > 0)).toBe(true);
   await expect(
     db.exec(`delete from auth.users where id='${owner}'`),
@@ -381,17 +605,23 @@ it("guards Auth deletion until provider cleanup and erases all owned data atomic
         "select * from public.beta_requests where email in ('profile-close@example.com','auth-close@example.com')",
       )
     ).rows,
-  ).toHaveLength(0);
+  ).toHaveLength(2);
   expect(
     (
       await db.query(
-        "select approved_by from public.beta_requests where email='someone-else@example.com'",
+        "select email from public.beta_requests where email='someone-else@example.com'",
       )
     ).rows,
-  ).toEqual([{ approved_by: null }]);
+  ).toEqual([{ email: "someone-else@example.com" }]);
+  expect(
+    (await db.query("select * from public.beta_requests order by email")).rows,
+  ).toEqual(allBetaBefore);
   expect(
     (await db.query(`select * from public.customers where id='${b}'`)).rows,
   ).toHaveLength(1);
+  expect(await otherRecords()).toEqual(otherBefore);
+  expect(await otherInvitations()).toEqual(invitationsBefore);
+  expect(await otherBeta()).toEqual(betaBefore);
   await expect(
     db.exec(`select public.enqueue_application_job('${owner}','provision')`),
   ).rejects.toThrow("foreign key");
@@ -412,4 +642,107 @@ it("preserves email-scoped invitation locks that are not Auth accounts", async (
     ).rows,
   ).toEqual([{ claimed: true }]);
   await db.exec(`select public.release_customer_lease('${lock}','${lock}')`);
+});
+
+it("protects computer records from direct clients, foreign instance binding and duplicate pending requests", async () => {
+  const owner = randomUUID(),
+    instance = "schema1234";
+  await db.query("insert into auth.users(id) values($1)", [owner]);
+  await db.query(
+    "insert into public.customers(id,email,profile) values($1,'computer@example.com','{}')",
+    [owner],
+  );
+  await db.query("insert into public.agents(owner_id,state) values($1,'{}')", [
+    owner,
+  ]);
+  const { service, request } = await computerRows(owner, instance);
+  for (const role of ["anon", "authenticated"]) {
+    await db.exec(`set role ${role}`);
+    for (const table of ["computer_services", "computer_link_requests"]) {
+      await expect(db.query(`select * from public.${table}`)).rejects.toThrow(
+        "permission denied",
+      );
+      await expect(db.query(`delete from public.${table}`)).rejects.toThrow(
+        "permission denied",
+      );
+    }
+    await db.exec("reset role");
+  }
+  await expect(
+    db.query(
+      "update public.computer_services set instance_id='other12345' where owner_id=$1",
+      [owner],
+    ),
+  ).rejects.toThrow("ownership cannot change");
+  await expect(
+    db.query(
+      "insert into public.computer_services(owner_id,instance_id,port,service) values($1,'other12345',8790,$2)",
+      [
+        owner,
+        JSON.stringify({ ...service, instanceId: "other12345", port: 8790 }),
+      ],
+    ),
+  ).rejects.toThrow("foreign key");
+  await expect(
+    db.query(
+      "update public.computer_services set service='{}' where owner_id=$1",
+      [owner],
+    ),
+  ).rejects.toThrow("check constraint");
+  const first = { ...request, id: randomUUID(), status: "pending" };
+  const insert = (row: typeof first) =>
+    db.query(
+      "insert into public.computer_link_requests(id,owner_id,instance_id,port,kind,status,request,created_at) values($1,$2,$3,8788,'signed',$4,$5,now())",
+      [row.id, owner, instance, row.status, JSON.stringify(row)],
+    );
+  await insert(first);
+  const duplicate = { ...first, id: randomUUID(), status: "publishing" };
+  await expect(insert(duplicate)).rejects.toThrow("duplicate key");
+  await db.query(
+    "update public.computer_link_requests set status='rejected',request=jsonb_set(request,'{status}','\"rejected\"') where id=$1",
+    [first.id],
+  );
+  await insert(duplicate);
+  await expect(
+    db.query(
+      "update public.computer_link_requests set owner_id=$1 where id=$2",
+      [b, duplicate.id],
+    ),
+  ).rejects.toThrow("ownership cannot change");
+  await db.query(
+    "update public.computer_services set service=$1 where owner_id=$2",
+    [JSON.stringify({ ...service, label: "Updated label" }), owner],
+  );
+});
+
+it("stores a single canonical beta request per email without an Auth owner or resetting approval", async () => {
+  const email = "unique-request@example.com";
+  await db.query(
+    "insert into public.beta_requests(email,approved_at) values($1,'2026-01-01T00:00:00Z')",
+    [email],
+  );
+  const before = (
+    await db.query("select * from public.beta_requests where email=$1", [email])
+  ).rows;
+  await expect(
+    db.query("insert into public.beta_requests(email) values($1)", [email]),
+  ).rejects.toThrow("duplicate key");
+  await db.query(
+    "insert into public.beta_requests(email) values(lower(btrim($1))) on conflict(email) do nothing",
+    [` ${email.toUpperCase()} `],
+  );
+  expect(
+    (
+      await db.query("select * from public.beta_requests where email=$1", [
+        email,
+      ])
+    ).rows,
+  ).toEqual(before);
+  expect(
+    (
+      await db.query(
+        "select column_name from information_schema.columns where table_schema='public' and table_name='beta_requests' and column_name in ('approved_by','owner_id','user_id')",
+      )
+    ).rows,
+  ).toEqual([]);
 });

@@ -14,6 +14,10 @@ import {
 import { credential, joinBeta, sendSignInLink, signOut } from "@/lib/client";
 import { Brand, Companion } from "./companion";
 import { LandingPage } from "./landing-page";
+import {
+  downloadDestination,
+  DOWNLOAD_RETURN_KEY,
+} from "@/lib/download-destination";
 
 export function PublicEntry({
   signIn = false,
@@ -40,10 +44,18 @@ export function PublicEntry({
       setError(
         "That sign-in link could not be used. Request a fresh one below.",
       );
-    if (invitation) window.history.replaceState({}, "", "/signin");
+    const next = downloadDestination(
+      url.searchParams.get("next") || localStorage.getItem(DOWNLOAD_RETURN_KEY),
+    );
+    if (invitation)
+      window.history.replaceState(
+        {},
+        "",
+        `/signin${next !== "/" ? "?" + new URLSearchParams({ next }) : ""}`,
+      );
     void credential()
       .then((value) => {
-        if (value) window.location.replace("/");
+        if (value) window.location.replace(next);
       })
       .catch(() => {});
   }, [signIn]);
@@ -53,7 +65,14 @@ export function PublicEntry({
     setBusy(true);
     setError("");
     try {
-      if (signIn) await sendSignInLink(email);
+      if (signIn)
+        await sendSignInLink(
+          email,
+          downloadDestination(
+            new URL(window.location.href).searchParams.get("next") ||
+              localStorage.getItem(DOWNLOAD_RETURN_KEY),
+          ),
+        );
       else await joinBeta(email.trim().toLowerCase(), website);
       setSent(true);
     } catch (error) {

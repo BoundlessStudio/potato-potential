@@ -1,15 +1,22 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type { AgentProvider, InkboxProvider } from "./providers";
 import type {
   Connection,
+  ComputerMetrics,
   Cron,
   CronRun,
   Session,
   Toolkit,
+  FileEntry,
+  DirectoryListing,
+  FileUpload,
 } from "@boundless/shared";
 import { ProviderError } from "./providers";
 import { MemoryRepository } from "./repository";
 import { screenForTemplate } from "./computer-maintenance";
+import { visibleMessage } from "@boundless/shared";
+import { uploadDirectory } from "./file-transfer";
+import { posix } from "node:path";
 
 export const DEMO_USER = "11111111-1111-4111-8111-111111111111";
 export const DEMO_NEW_USER = "22222222-2222-4222-8222-222222222222";
@@ -27,6 +34,78 @@ export class DemoAgent37 implements AgentProvider {
   buffers = new Map<string, string>();
   responseSessions = new Map<string, string>();
   files = new Map<string, { content: string; modified: number }>();
+  binaryFiles = new Map<string, Uint8Array>();
+  async listDirectories(id: string, path: string): Promise<DirectoryListing> {
+    path = uploadDirectory(path);
+    const directories = new Set([
+      "/home/node",
+      "/home/node/uploads",
+      "/home/node/outputs",
+      "/home/node/work",
+      "/home/node/work/客户",
+      "/home/node/.hermes",
+      "/home/linuxbrew",
+    ]);
+    for (const key of this.binaryFiles.keys()) {
+      if (!key.startsWith(`${id}:`)) continue;
+      let parent = posix.dirname(key.slice(id.length + 1));
+      while (parent !== "/home" && parent !== "/") {
+        directories.add(parent);
+        parent = posix.dirname(parent);
+      }
+    }
+    if (!directories.has(path))
+      throw new ProviderError(
+        404,
+        "directory_not_found",
+        "This folder no longer exists. Choose another folder.",
+      );
+    return {
+      path,
+      parentPath: ["/home/node", "/home/linuxbrew"].includes(path)
+        ? null
+        : posix.dirname(path),
+      directories: [...directories]
+        .filter((p) => posix.dirname(p) === path)
+        .map((p) => ({
+          path: p,
+          name: posix.basename(p),
+          hidden: posix.basename(p).startsWith("."),
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      truncated: false,
+    };
+  }
+  responseRequests: { instanceId: string; body: Record<string, unknown> }[] =
+    [];
+  async statFile(id: string, path: string): Promise<FileEntry> {
+    path = path.replace(/^~(?=\/|$)/, "/home/node");
+    const bytes = this.binaryFiles.get(`${id}:${path}`);
+    if (!bytes)
+      throw new ProviderError(
+        404,
+        "file_not_found",
+        "File not found or not a regular file.",
+      );
+    return {
+      name: path.split("/").pop()!,
+      path,
+      size: bytes.length,
+      type: "file",
+      modified: Date.now(),
+      hidden: false,
+    };
+  }
+  async writeBinary(id: string, path: string, bytes: Uint8Array) {
+    this.binaryFiles.set(`${id}:${path}`, new Uint8Array(bytes));
+    return this.statFile(id, path);
+  }
+  async downloadFile(id: string, path: string) {
+    const file = await this.statFile(id, path);
+    return new Response(
+      new Uint8Array(this.binaryFiles.get(`${id}:${file.path}`)!),
+    );
+  }
   schedules = new Map<string, Cron[]>();
   connectionsMap = new Map<string, Connection[]>();
   constructor() {
@@ -80,7 +159,128 @@ export class DemoAgent37 implements AgentProvider {
   async healthy() {
     return true;
   }
+  serviceStates = new Map<string, boolean>();
+  async checkService(id: string, port: number) {
+    await this.instance(id);
+    return this.serviceStates.get(`${id}:${port}`) ?? true;
+  }
+  async signedUrl(id: string, port: number, ttlSeconds: number) {
+    await this.instance(id);
+    return {
+      port,
+      url: `https://${id}-${port}.agent37.app/?a37_token=${hex()}`,
+      expires_at: Math.floor(Date.now() / 1000) + ttlSeconds,
+    };
+  }
+  async publicPorts(id: string) {
+    return structuredClone((await this.instance(id)).public_ports);
+  }
+  async createPublicPort(id: string, port: number, label: string) {
+    const instance = await this.instance(id);
+    if (instance.public_ports.some((row: any) => row.port === port))
+      throw new ProviderError(
+        409,
+        "public_port_exists",
+        "Port already public.",
+      );
+    if (instance.public_ports.length >= 50)
+      throw new ProviderError(
+        400,
+        "public_port_limit",
+        "Public port limit reached.",
+      );
+    const row = {
+      port,
+      label,
+      url: `https://${randomBytes(10).toString("hex")}.agent37.app`,
+      created: Math.floor(Date.now() / 1000),
+    };
+    instance.public_ports.push(row);
+    return structuredClone(row);
+  }
+  async removePublicPort(id: string, port: number) {
+    const instance = await this.instance(id);
+    if (!instance.public_ports.some((row: any) => row.port === port))
+      throw new ProviderError(404, "not_found", "Port not public.");
+    instance.public_ports = instance.public_ports.filter(
+      (row: any) => row.port !== port,
+    );
+  }
+  async metrics(id: string): Promise<ComputerMetrics> {
+    const instance = await this.instance(id);
+    const now = Math.floor(Date.now() / 1000);
+    const points = (value: number): [number, number][] =>
+      Array.from({ length: 24 }, (_, i) => [
+        now - (23 - i) * 3600,
+        value * (0.6 + 0.3 * Math.sin(i)),
+      ]);
+    return {
+      series: {
+        cpu_cores: instance.status === "running" ? points(0.5) : [],
+        memory_bytes: instance.status === "running" ? points(1e9) : [],
+        disk_bytes: points(2e9),
+      },
+      limits: { cpu_cores: 2, memory_bytes: 4e9, disk_bytes: 20e9 },
+      hours: 24,
+      step_seconds: 3600,
+      fetched_at: now,
+    };
+  }
   async exec(id?: string, command?: string) {
+    if (command?.includes("file-upload.mjs")) {
+      const args = command
+        .match(/'([^']*)'/g)!
+        .map((value) => value.slice(1, -1));
+      const u = JSON.parse(
+        Buffer.from(args[2], "base64url").toString(),
+      ) as FileUpload & { index?: number };
+      const operation = args[1],
+        stage = `/home/node/.boundless/file-uploads/${u.id}/`;
+      if (operation === "cleanup")
+        for (const key of this.binaryFiles.keys()) {
+          if (key.startsWith(`${id}:${stage}`)) this.binaryFiles.delete(key);
+        }
+      if (operation === "complete") {
+        if (!this.binaryFiles.has(`${id}:${stage}receipt`)) {
+          if (this.binaryFiles.has(`${id}:${u.target}`))
+            return {
+              stdout: JSON.stringify({
+                code: "file_exists",
+                error: "File exists.",
+              }),
+              stderr: "",
+              exit_code: 1,
+            };
+          const bytes = Buffer.concat(
+            Array.from({ length: Math.ceil(u.size / 2097152) }, (_, index) =>
+              Buffer.from(
+                this.binaryFiles.get(`${id}:${stage}${index}.part`) || [],
+              ),
+            ),
+          );
+          if (
+            bytes.length !== u.size ||
+            createHash("sha256").update(bytes).digest("hex") !== u.sha256
+          )
+            return {
+              stdout: JSON.stringify({
+                code: "checksum_mismatch",
+                error: "File verification failed.",
+              }),
+              stderr: "",
+              exit_code: 1,
+            };
+          await this.writeBinary(id!, u.target!, bytes);
+          this.binaryFiles.set(`${id}:${stage}receipt`, new Uint8Array());
+        }
+        return {
+          stdout: JSON.stringify({ file: await this.statFile(id!, u.target!) }),
+          stderr: "",
+          exit_code: 0,
+        };
+      }
+      return { stdout: '{"ok":true}', stderr: "", exit_code: 0 };
+    }
     if (command?.includes("/proc/1/stat"))
       return {
         stdout: `${this.instances.get(id!)?.boot || 1}:1:1`,
@@ -118,13 +318,20 @@ export class DemoAgent37 implements AgentProvider {
     this.files.set(path, { content, modified: Date.now() + Math.random() });
   }
   async responses(_id: string, body: Record<string, unknown>) {
+    this.responseRequests.push({
+      instanceId: _id,
+      body: structuredClone(body),
+    });
     const sessionId = String(body.session_id || hex());
     const responseId = hex();
     const input = String(body.input);
-    const introduction = input.startsWith("App context");
+    const introduction =
+      input.startsWith("App context") &&
+      input.includes("This is your introduction to ");
+    const userInput = visibleMessage(input) || input;
     const output = introduction
       ? "Hey Alex, I’m Pip. A little curious, a lot in your corner.\n\nI can keep an eye on your week, prepare you for meetings, or turn a loose idea into a finished piece of work. What should we take on first?"
-      : `I’ve got it. In this local preview, we can explore how that work would look together.\n\n**${input.slice(-400)}**\n\nYou can track it in Tasks, add what matters to the Wiki, or set up a Routine. A live Agent37 connection will let me carry out the work on my computer.`;
+      : `I’ve got it. In this local preview, we can explore how that work would look together.\n\n**${userInput.slice(-400)}**\n\nYou can track it in Tasks, add what matters to the Wiki, or set up a Routine. A live Agent37 connection will let me carry out the work on my computer.`;
     const session = this.histories.get(sessionId) || {
       id: sessionId,
       active_response_id: null,

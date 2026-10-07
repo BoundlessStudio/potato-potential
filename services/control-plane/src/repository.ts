@@ -2,11 +2,14 @@ import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type {
   Agent,
+  ComputerService,
+  ComputerLinkRequest,
   Conversation,
   CronRun,
   Notification,
   Profile,
   WorkspaceItem,
+  FileUpload,
 } from "@boundless/shared";
 import { HttpError } from "./security";
 
@@ -14,13 +17,15 @@ export type BetaRequest = {
   email: string;
   createdAt: string;
   approvedAt?: string;
-  approvedBy?: string;
   sentAt?: string;
   invitationBox?: string;
   expiresAt?: string;
 };
 
 export interface Repository {
+  fileUploads(ownerId: string): Promise<FileUpload[]>;
+  fileUpload(ownerId: string, id: string): Promise<FileUpload | null>;
+  saveFileUpload(upload: FileUpload): Promise<void>;
   profile(ownerId: string): Promise<Profile | null>;
   saveProfile(profile: Profile): Promise<void>;
   acceptInvitation(profile: Profile, digest: string): Promise<void>;
@@ -44,6 +49,14 @@ export interface Repository {
   addBetaRequest(email: string): Promise<void>;
   betaRequests(): Promise<BetaRequest[]>;
   saveBetaRequest(request: BetaRequest): Promise<void>;
+  computerServices(ownerId: string): Promise<ComputerService[]>;
+  saveComputerService(service: ComputerService): Promise<void>;
+  computerRequests(ownerId: string): Promise<ComputerLinkRequest[]>;
+  computerRequest(
+    ownerId: string,
+    id: string,
+  ): Promise<ComputerLinkRequest | null>;
+  saveComputerRequest(request: ComputerLinkRequest): Promise<void>;
   items(ownerId: string, kind?: string): Promise<WorkspaceItem[]>;
   item(ownerId: string, id: string): Promise<WorkspaceItem | null>;
   saveItem(item: WorkspaceItem): Promise<void>;
@@ -59,6 +72,32 @@ export interface Repository {
   locked<T>(ownerId: string, work: () => Promise<T>): Promise<T>;
 }
 export class MemoryRepository implements Repository {
+  uploadRows = new Map<string, FileUpload>();
+  async fileUploads(ownerId: string) {
+    return structuredClone(
+      [...this.uploadRows.values()].filter((row) => row.ownerId === ownerId),
+    );
+  }
+  async fileUpload(ownerId: string, id: string) {
+    const row = this.uploadRows.get(id);
+    return row?.ownerId === ownerId ? structuredClone(row) : null;
+  }
+  async saveFileUpload(row: FileUpload) {
+    const prior = this.uploadRows.get(row.id);
+    if (
+      prior &&
+      ["ownerId", "instanceId", "directory", "name", "size", "sha256"].some(
+        (key) =>
+          prior[key as keyof FileUpload] !== row[key as keyof FileUpload],
+      )
+    )
+      throw new HttpError(
+        409,
+        "upload_conflict",
+        "This upload belongs to another file.",
+      );
+    this.uploadRows.set(row.id, structuredClone(row));
+  }
   profiles = new Map<string, Profile>();
   agentRows = new Map<string, Agent>();
   itemRows = new Map<string, WorkspaceItem>();
@@ -71,6 +110,43 @@ export class MemoryRepository implements Repository {
   >();
   locks = new Map<string, Promise<void>>();
   betaRows = new Map<string, BetaRequest>();
+  serviceRows = new Map<string, ComputerService>();
+  requestRows = new Map<string, ComputerLinkRequest>();
+  async computerServices(ownerId: string) {
+    return structuredClone(
+      [...this.serviceRows.values()].filter((row) => row.ownerId === ownerId),
+    );
+  }
+  async saveComputerService(row: ComputerService) {
+    const prior = this.serviceRows.get(`${row.ownerId}:${row.port}`);
+    if (prior && prior.instanceId !== row.instanceId)
+      throw new HttpError(
+        409,
+        "service_conflict",
+        "Service belongs to another computer.",
+      );
+    this.serviceRows.set(`${row.ownerId}:${row.port}`, structuredClone(row));
+  }
+  async computerRequests(ownerId: string) {
+    return structuredClone(
+      [...this.requestRows.values()].filter((row) => row.ownerId === ownerId),
+    );
+  }
+  async computerRequest(ownerId: string, id: string) {
+    const row = this.requestRows.get(id);
+    return row?.ownerId === ownerId ? structuredClone(row) : null;
+  }
+  async saveComputerRequest(row: ComputerLinkRequest) {
+    const prior = this.requestRows.get(row.id);
+    if (
+      prior &&
+      (prior.ownerId !== row.ownerId ||
+        prior.instanceId !== row.instanceId ||
+        prior.port !== row.port)
+    )
+      throw new HttpError(409, "request_conflict", "Request id already used.");
+    this.requestRows.set(row.id, structuredClone(row));
+  }
   async profile(id: string) {
     return structuredClone(this.profiles.get(id) || null);
   }
@@ -152,7 +228,7 @@ export class MemoryRepository implements Repository {
     );
   }
   async addBetaRequest(email: string) {
-    email = email.toLowerCase();
+    email = email.trim().toLowerCase();
     if (!this.betaRows.has(email))
       this.betaRows.set(email, { email, createdAt: new Date().toISOString() });
   }
@@ -224,12 +300,17 @@ export class MemoryRepository implements Repository {
     for (const [digest, invitation] of this.invites)
       if (invitation.usedBy === ownerId || invitation.email === email)
         this.invites.delete(digest);
-    if (email) this.betaRows.delete(email);
-    for (const row of this.betaRows.values())
-      if (row.approvedBy === ownerId) row.approvedBy = undefined;
     this.profiles.delete(ownerId);
     this.agentRows.delete(ownerId);
-    for (const map of [this.itemRows, this.notes, this.threads, this.runs])
+    for (const map of [
+      this.itemRows,
+      this.notes,
+      this.threads,
+      this.runs,
+      this.serviceRows,
+      this.requestRows,
+      this.uploadRows,
+    ])
       for (const [key, value] of map)
         if (value.ownerId === ownerId) map.delete(key);
   }
@@ -251,6 +332,41 @@ export class MemoryRepository implements Repository {
 }
 
 export class SupabaseRepository implements Repository {
+  async fileUploads(ownerId: string): Promise<FileUpload[]> {
+    return (
+      this.check(
+        await this.client
+          .from("file_uploads")
+          .select("upload")
+          .eq("owner_id", ownerId),
+      ) || []
+    ).map((row) => row.upload);
+  }
+  async fileUpload(ownerId: string, id: string): Promise<FileUpload | null> {
+    const row = this.check(
+      await this.client
+        .from("file_uploads")
+        .select("upload")
+        .eq("owner_id", ownerId)
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return row?.upload || null;
+  }
+  async saveFileUpload(upload: FileUpload) {
+    this.check(
+      await this.client
+        .from("file_uploads")
+        .upsert({
+          id: upload.id,
+          owner_id: upload.ownerId,
+          instance_id: upload.instanceId,
+          state: upload.state,
+          expires_at: upload.expiresAt,
+          upload,
+        }),
+    );
+  }
   client: SupabaseClient;
   constructor(url: string, key: string) {
     this.client = createClient(url, key, {
@@ -265,6 +381,73 @@ export class SupabaseRepository implements Repository {
         "The workspace could not be saved. Please retry.",
       );
     return result.data;
+  }
+  async computerServices(ownerId: string): Promise<ComputerService[]> {
+    return (
+      this.check(
+        await this.client
+          .from("computer_services")
+          .select("service")
+          .eq("owner_id", ownerId),
+      ) || []
+    ).map((row) => row.service);
+  }
+  async saveComputerService(row: ComputerService) {
+    this.check(
+      await this.client.from("computer_services").upsert(
+        {
+          owner_id: row.ownerId,
+          instance_id: row.instanceId,
+          port: row.port,
+          service: row,
+        },
+        { onConflict: "owner_id,port" },
+      ),
+    );
+  }
+  async computerRequests(ownerId: string): Promise<ComputerLinkRequest[]> {
+    return (
+      this.check(
+        await this.client
+          .from("computer_link_requests")
+          .select("request")
+          .eq("owner_id", ownerId)
+          .order("created_at", { ascending: false }),
+      ) || []
+    ).map((row) => row.request);
+  }
+  async computerRequest(
+    ownerId: string,
+    id: string,
+  ): Promise<ComputerLinkRequest | null> {
+    const row = this.check(
+      await this.client
+        .from("computer_link_requests")
+        .select("request")
+        .eq("owner_id", ownerId)
+        .eq("id", id)
+        .maybeSingle(),
+    );
+    return row?.request || null;
+  }
+  async saveComputerRequest(row: ComputerLinkRequest) {
+    const result = await this.client.from("computer_link_requests").upsert({
+      id: row.id,
+      owner_id: row.ownerId,
+      instance_id: row.instanceId,
+      port: row.port,
+      kind: row.kind,
+      status: row.status,
+      created_at: row.createdAt,
+      request: row,
+    });
+    if (result.error?.code === "23505")
+      throw new HttpError(
+        409,
+        "request_conflict",
+        "A request is already pending for that service.",
+      );
+    this.check(result);
   }
   async profile(ownerId: string) {
     const row = this.check(
@@ -392,7 +575,7 @@ export class SupabaseRepository implements Repository {
       await this.client
         .from("beta_requests")
         .upsert(
-          { email: email.toLowerCase() },
+          { email: email.trim().toLowerCase() },
           { onConflict: "email", ignoreDuplicates: true },
         ),
     );
@@ -408,7 +591,6 @@ export class SupabaseRepository implements Repository {
       email: row.email,
       createdAt: row.created_at,
       approvedAt: row.approved_at || undefined,
-      approvedBy: row.approved_by || undefined,
       sentAt: row.sent_at || undefined,
       invitationBox: row.invitation_box || undefined,
       expiresAt: row.expires_at || undefined,
@@ -420,7 +602,6 @@ export class SupabaseRepository implements Repository {
         email: request.email,
         created_at: request.createdAt,
         approved_at: request.approvedAt || null,
-        approved_by: request.approvedBy || null,
         sent_at: request.sentAt || null,
         invitation_box: request.invitationBox || null,
         expires_at: request.expiresAt || null,

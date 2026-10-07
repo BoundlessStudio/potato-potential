@@ -25,8 +25,7 @@ test("keeps takeover read-only while cancellation is pending and after a failed 
   });
   await page.goto("/");
   await page
-    .getByRole("button", { name: /computer/i })
-    .first()
+    .getByRole("button", { name: "Preview computer", exact: true })
     .click();
   await page.getByRole("button", { name: "Take over", exact: true }).click();
   await expect(
@@ -59,8 +58,7 @@ test("does not grant control to a reopened computer after the original panel clo
   });
   await page.goto("/");
   await page
-    .getByRole("button", { name: /computer/i })
-    .first()
+    .getByRole("button", { name: "Preview computer", exact: true })
     .click();
   await page.getByRole("button", { name: "Take over", exact: true }).click();
   await expect(
@@ -68,8 +66,7 @@ test("does not grant control to a reopened computer after the original panel clo
   ).toBeDisabled();
   await page.getByRole("button", { name: "Close computer" }).click();
   await page
-    .getByRole("button", { name: /computer/i })
-    .first()
+    .getByRole("button", { name: "Preview computer", exact: true })
     .click();
   release();
   await expect(
@@ -320,17 +317,38 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   await page
     .getByRole("button", { name: "Your conversation", exact: true })
     .click();
-  await page
-    .getByRole("button", { name: /computer/i })
-    .first()
-    .click();
+  await expect(
+    page
+      .locator(".chat-heading")
+      .getByRole("button", { name: "Preview computer", exact: true }),
+  ).toHaveCount(0);
+  const preview = page
+    .locator(".companion-panel")
+    .getByRole("button", { name: "Preview computer", exact: true });
+  await expect(preview).toBeVisible();
+  await preview.click();
+  await expect(
+    page
+      .locator(".companion-panel")
+      .getByRole("button", { name: "Close computer" }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Take over", exact: true }).click();
   await expect(page.getByText("You have control")).toBeVisible();
   await page
     .getByRole("button", { name: "Return control", exact: true })
     .click();
   await page.getByRole("button", { name: "Close computer" }).click();
-  await page.getByRole("button", { name: "Channels", exact: true }).click();
+  await expect(preview).toBeVisible();
+  const channels = page.locator(".topbar-actions").getByRole("button", {
+    name: "Channels",
+    exact: true,
+  });
+  await expect(page.getByText("Here for you", { exact: true })).toHaveCount(0);
+  await expect(
+    page.locator(".chat-tools").getByRole("button", { name: "Channels" }),
+  ).toHaveCount(0);
+  await expect(channels).toHaveText("");
+  await channels.click();
   await expect(page.getByText("Connected", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: /completed/ }).click();
   await expect(
@@ -363,6 +381,37 @@ test("mobile navigation and overflowing layout", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Good things, getting done." }),
   ).toBeVisible();
+  const channels = page.locator(".topbar-actions").getByRole("button", {
+    name: "Channels",
+    exact: true,
+  });
+  await channels.click();
+  await expect(
+    page.getByRole("dialog", { name: "One companion, wherever you are" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(channels).toBeFocused();
+  await page.setViewportSize({ width: 320, height: 720 });
+  await expect(channels).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "Open navigation" }).click();
+  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Computer", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Connect to desktop" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 test("resumable first-time setup with explicit preview phone confirmation", async ({
   page,

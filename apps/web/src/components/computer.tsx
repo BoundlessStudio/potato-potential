@@ -10,15 +10,31 @@ export function Computer({
   onClose,
   onReturn,
   onError,
+  autoConnect = true,
+  available = true,
 }: {
   profile: Profile;
-  onClose: () => void;
+  onClose?: () => void;
   onReturn: () => void;
   onError: (message: string) => void;
+  autoConnect?: boolean;
+  available?: boolean;
 }) {
   const target = useRef<HTMLDivElement>(null);
   const rfb = useRef<any>(null);
   const [control, setControl] = useState(false);
+  const controlRef = useRef(false);
+  const onReturnRef = useRef(onReturn);
+  onReturnRef.current = onReturn;
+  const [requested, setRequested] = useState(autoConnect);
+  const availableRef = useRef(available && requested);
+  availableRef.current = available && requested;
+  function releaseControl() {
+    if (!controlRef.current) return;
+    controlRef.current = false;
+    if (mounted.current) setControl(false);
+    onReturnRef.current();
+  }
   const [changingControl, setChangingControl] = useState(false);
   const changing = useRef(false);
   const mounted = useRef(false);
@@ -32,9 +48,17 @@ export function Computer({
     };
   }, []);
   useEffect(() => {
+    if (!requested || !available) return;
     if (demo) {
       setState("Preview computer");
-      return;
+      const visibility = () => {
+        if (document.hidden) releaseControl();
+      };
+      document.addEventListener("visibilitychange", visibility);
+      return () => {
+        document.removeEventListener("visibilitychange", visibility);
+        releaseControl();
+      };
     }
     let disposed = false;
     let connecting = false;
@@ -65,7 +89,7 @@ export function Computer({
         instance.addEventListener("disconnect", () => {
           if (rfb.current === instance) {
             rfb.current = null;
-            setControl(false);
+            releaseControl();
           }
           if (!disposed && !document.hidden && !rfb.current)
             setState("Disconnected — reconnect when you’re ready");
@@ -92,7 +116,7 @@ export function Computer({
       if (document.hidden) {
         rfb.current?.disconnect();
         rfb.current = null;
-        setControl(false);
+        releaseControl();
         setState("Paused while this tab is hidden");
       } else void connect();
     }
@@ -103,8 +127,9 @@ export function Computer({
       document.removeEventListener("visibilitychange", visibility);
       rfb.current?.disconnect();
       rfb.current = null;
+      releaseControl();
     };
-  }, [retry, onError]);
+  }, [retry, onError, requested, available]);
   async function toggle() {
     if (changing.current) return;
     changing.current = true;
@@ -115,16 +140,17 @@ export function Computer({
         await api("/computer/takeover", "POST");
         if (
           !mounted.current ||
+          !availableRef.current ||
           document.hidden ||
           (!demo && (!connection || rfb.current !== connection))
         )
           return;
         if (connection) connection.viewOnly = false;
+        controlRef.current = true;
         setControl(true);
       } else {
         if (rfb.current) rfb.current.viewOnly = true;
-        setControl(false);
-        onReturn();
+        releaseControl();
       }
     } catch (error) {
       if (mounted.current)
@@ -143,13 +169,15 @@ export function Computer({
           <span className="eyebrow">A window into their world</span>
           <h3>{profile.agentName}’s computer</h3>
         </div>
-        <button
-          className="icon-button"
-          onClick={onClose}
-          aria-label="Close computer"
-        >
-          <X size={18} />
-        </button>
+        {onClose && (
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close computer"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
       <div className="computer-browser">
         <div className="browser-chrome">
@@ -186,19 +214,30 @@ export function Computer({
       </div>
       <div className="computer-status">
         <span className="status-dot" />
-        {state}
+        {!available
+          ? "Computer unavailable"
+          : !requested
+            ? "Connect when you’re ready"
+            : state}
         <button
-          className="icon-button"
-          aria-label="Reconnect computer"
-          onClick={() => setRetry((value) => value + 1)}
+          className={requested ? "icon-button" : "text-button"}
+          aria-label={requested ? "Reconnect computer" : "Connect to desktop"}
+          disabled={!available}
+          onClick={() => {
+            setRequested(true);
+            setRetry((value) => value + 1);
+          }}
         >
           <RefreshCw size={14} />
+          {!requested && "Connect to desktop"}
         </button>
       </div>
       <button
         className={`button ${control ? "button-primary" : "button-secondary"} computer-control`}
         onClick={toggle}
-        disabled={changingControl || (!demo && !rfb.current)}
+        disabled={
+          changingControl || !requested || !available || (!demo && !rfb.current)
+        }
       >
         {control ? <Eye size={16} /> : <MousePointer2 size={16} />}{" "}
         {changingControl

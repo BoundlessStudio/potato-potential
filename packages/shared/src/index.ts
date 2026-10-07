@@ -102,6 +102,9 @@ export type Agent = {
     error?: string;
   };
   computerScreen?: { width: number; height: number };
+  computerHelperVersion?: number;
+  workspaceHelperVersion?: number;
+  fileTransferVersion?: number;
   connect?: { number: string; command: string; smsLink: string; qr: string };
   sms?: { id: string; number: string; status: string };
   deletion?: { instance: boolean; identity: boolean };
@@ -156,6 +159,13 @@ export type WorkspaceItem = z.infer<typeof itemSchema> & {
   ownerId: string;
   createdAt: string;
   updatedAt: string;
+  // Managed by the server; editing task details must not replace these links.
+  sessionLinks?: TaskSessionLink[];
+};
+export type TaskSessionLink = {
+  sessionId: string;
+  instanceId: string;
+  linkedAt: string;
 };
 export type Notification = {
   id: string;
@@ -164,6 +174,61 @@ export type Notification = {
   createdAt: string;
   readAt?: string;
   sessionId?: string;
+  target?: { view: "computer"; requestId: string };
+};
+
+export const signedLinkDurations = [900, 3600, 86400, 604800] as const;
+export type ComputerMetrics = {
+  series: {
+    cpu_cores: [number, number][];
+    memory_bytes: [number, number][];
+    disk_bytes: [number, number][];
+  };
+  limits: { cpu_cores: number; memory_bytes: number; disk_bytes: number };
+  hours: number;
+  step_seconds: number;
+  fetched_at: number;
+};
+export type ComputerService = {
+  ownerId: string;
+  instanceId: string;
+  port: number;
+  label: string;
+  createdAt: string;
+  state: "unknown" | "running" | "not_running";
+  checkedAt?: string;
+  publicRemoval?: {
+    phase: "queued" | "failed";
+    attempts: number;
+    error?: string;
+  };
+};
+export type ComputerLinkRequest = {
+  id: string;
+  ownerId: string;
+  instanceId: string;
+  port: number;
+  label: string;
+  reason: string;
+  kind: "signed" | "public";
+  ttlSeconds?: number;
+  source: "owner" | "agent";
+  status:
+    "pending" | "publishing" | "approved" | "rejected" | "failed" | "revoked";
+  createdAt: string;
+  decidedAt?: string;
+  expiresAt?: string;
+  urlBox?: string;
+  notificationId?: string;
+  attempts: number;
+  error?: string;
+};
+export type PublicComputerLink = Omit<
+  ComputerLinkRequest,
+  "urlBox" | "notificationId" | "attempts" | "status"
+> & {
+  status: ComputerLinkRequest["status"] | "expired";
+  url?: string;
 };
 export type Conversation = {
   ownerId: string;
@@ -173,6 +238,56 @@ export type Conversation = {
   createdAt: string;
 };
 export type Message = { role: string; content: string; timestamp?: number };
+export const UPLOAD_CHUNK_BYTES = 2 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 100_000_000;
+export const DEFAULT_UPLOAD_DIRECTORY = "/home/node/uploads";
+export type DirectoryListing = {
+  path: string;
+  parentPath: string | null;
+  directories: { name: string; path: string; hidden: boolean }[];
+  truncated: boolean;
+};
+export type FileEntry = {
+  name: string;
+  path: string;
+  type: "file";
+  size: number;
+  modified: number;
+  hidden: boolean;
+};
+export type FileUpload = {
+  id: string;
+  ownerId: string;
+  instanceId: string;
+  directory: string;
+  name: string;
+  size: number;
+  sha256: string;
+  chunks: Record<string, string>;
+  state: "uploading" | "finalizing" | "completed" | "cancelled" | "expired";
+  target?: string;
+  file?: FileEntry;
+  createdAt: string;
+  expiresAt: string;
+  cleanedAt?: string;
+};
+export function fileDownloadUrl(instance: string, path: string) {
+  return `/api/files/content?${new URLSearchParams({ instance, path })}`;
+}
+export function fileAttachmentText(
+  instance: string,
+  files: { name: string; path: string }[],
+) {
+  return files.length
+    ? "\n\nUploaded files:\n" +
+        files
+          .map(
+            (file) =>
+              `- [${file.name.replace(/[\\\[\]]/g, "\\$&").replace(/[\r\n]/g, " ")}](${fileDownloadUrl(instance, file.path)})`,
+          )
+          .join("\n")
+    : "";
+}
 export type Session = {
   id: string;
   active_response_id: string | null;

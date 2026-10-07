@@ -28,7 +28,7 @@ const queue: Queue = {
             : kind === "maintenance"
               ? maintainComputer(dep, ownerId)
               : reconcile(dep, ownerId);
-      if (kind === "maintenance")
+      if (kind === "maintenance" || kind === "reconcile")
         void job
           .then((more) => {
             if (more) setTimeout(() => void queue.send(kind, ownerId), 100);

@@ -5,16 +5,22 @@ import type { Agent } from "@boundless/shared";
 import { api } from "@/lib/client";
 import { Modal } from "./modal";
 
-type Status = {
+export type ComputerStatus = {
   installedTemplate: string;
   availableTemplate: string;
   updateAvailable: boolean;
   instanceStatus: string;
   screen: { width: number; height: number };
   operation: Agent["computerOperation"] | null;
+  canManage?: boolean;
+  suspended?: boolean;
 };
-export function ComputerSettings() {
-  const [status, setStatus] = useState<Status | null>(null);
+export function ComputerSettings({
+  onStatus,
+}: {
+  onStatus?: (status: ComputerStatus) => void;
+}) {
+  const [status, setStatus] = useState<ComputerStatus | null>(null);
   const [error, setError] = useState("");
   const [confirm, setConfirm] = useState<"restart" | "update" | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -23,22 +29,26 @@ export function ComputerSettings() {
     ["queued", "applying", "checking"].includes(status.operation.phase);
   const refresh = useCallback(async () => {
     try {
-      setStatus(await api("/computer/maintenance"));
+      const next = await api<ComputerStatus>("/computer/status");
+      setStatus(next);
+      onStatus?.(next);
       setError("");
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Couldn’t check the computer.",
       );
     }
-  }, []);
+  }, [onStatus]);
   useEffect(() => {
     void refresh();
   }, [refresh]);
   useEffect(() => {
-    if (!busy) return;
-    const timer = setInterval(() => {
-      if (!document.hidden) void refresh();
-    }, 2500);
+    const timer = setInterval(
+      () => {
+        if (!document.hidden) void refresh();
+      },
+      busy ? 2500 : 15000,
+    );
     return () => clearInterval(timer);
   }, [busy, refresh]);
   async function submit() {
@@ -62,7 +72,7 @@ export function ComputerSettings() {
   const phase = status?.operation?.phase;
   return (
     <section className="settings-card computer-settings">
-      <span className="eyebrow">Beta operator controls</span>
+      <span className="eyebrow">Status and maintenance</span>
       <h2>
         <Monitor size={19} /> Their computer.
       </h2>
@@ -89,14 +99,14 @@ export function ComputerSettings() {
           </dl>
           <p className="muted">
             {status.updateAvailable
-              ? "An update is ready: a portrait screen for easier browsing beside your conversation."
+              ? `A tested update is ready: ${status.availableTemplate}.`
               : "Your computer has the current update."}
           </p>
           <div className="memory-actions">
             <button
               type="button"
               className="button button-secondary"
-              disabled={busy || submitting}
+              disabled={busy || submitting || status.canManage === false}
               onClick={() => setConfirm("restart")}
             >
               <RefreshCw size={15} /> Restart computer
@@ -104,12 +114,23 @@ export function ComputerSettings() {
             <button
               type="button"
               className="button button-primary"
-              disabled={busy || submitting || !status.updateAvailable}
+              disabled={
+                busy ||
+                submitting ||
+                status.canManage === false ||
+                !status.updateAvailable
+              }
               onClick={() => setConfirm("update")}
             >
               <Download size={15} /> Update computer
             </button>
           </div>
+          {status.suspended && (
+            <p className="muted">
+              Your operator has paused this computer. Its status remains
+              available.
+            </p>
+          )}
           {status.operation && (
             <p
               className={
@@ -175,7 +196,7 @@ export function ComputerSettings() {
             </p>
           )}
           <p>
-            You can close this page once it starts. Come back to Settings to see
+            You can close this page once it starts. Come back to Computer to see
             its progress.
           </p>
           <div className="modal-actions">

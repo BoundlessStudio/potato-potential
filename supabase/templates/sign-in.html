@@ -3,10 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light dark" />
-    <meta name="supported-color-schemes" content="light dark" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
     <title>Your sign-in link to Potato Potential</title>
     <style>
+      :root { color-scheme: light; supported-color-schemes: light; }
       body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
       table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
       img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
@@ -18,55 +19,42 @@
         .email-title { font-size: 28px !important; line-height: 36px !important; }
         .email-footer { padding: 24px 12px 0 !important; }
       }
-      @media (prefers-color-scheme: dark) {
-        .email-body, .email-outer { background-color: #19151f !important; }
-        .email-card { background-color: #27212f !important; border-color: #42364e !important; }
-        .email-title { color: #f6effb !important; }
-        .email-copy { color: #d9cfe2 !important; }
-        .email-note { background-color: #33293e !important; border-color: #493957 !important; }
-        .email-eyebrow, .email-link { color: #c8afff !important; }
-        .email-muted { color: #bcb0c9 !important; }
-      }
-      [data-ogsc] .email-body, [data-ogsc] .email-outer { background-color: #19151f !important; }
-      [data-ogsc] .email-card { background-color: #27212f !important; border-color: #42364e !important; }
-      [data-ogsc] .email-title { color: #f6effb !important; }
-      [data-ogsc] .email-copy { color: #d9cfe2 !important; }
-      [data-ogsc] .email-note { background-color: #33293e !important; border-color: #493957 !important; }
-      [data-ogsc] .email-eyebrow, [data-ogsc] .email-link { color: #c8afff !important; }
-      [data-ogsc] .email-muted { color: #bcb0c9 !important; }
+      .email-body, .email-outer, .email-card, .email-note { background-color: #ffffff !important; }
+      .email-button { background-color: #9574ED !important; border-color: #9574ED !important; }
+      .email-title, .email-copy, .email-eyebrow, .email-link, .email-muted, .email-button a { color: #000000 !important; }
     </style>
   </head>
-  <body class="email-body" style="margin: 0; padding: 0; width: 100%; background-color: #f5f2fa; font-family: Arial, Helvetica, sans-serif;">
-    <div aria-hidden="true" style="display: none; font-size: 1px; line-height: 1px; color: #f5f2fa; max-height: 0; max-width: 0; opacity: 0; overflow: hidden; mso-hide: all;">
+  <body class="email-body" style="margin: 0; padding: 0; width: 100%; background-color: #ffffff; color: #000000; font-family: Arial, Helvetica, sans-serif;">
+    <div aria-hidden="true" style="display: none; font-size: 1px; line-height: 1px; color: #ffffff; max-height: 0; max-width: 0; opacity: 0; overflow: hidden; mso-hide: all;">
       Your sign-in link to Potato Potential is ready. No password needed.
     </div>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
       <tr>
-        <td class="email-outer" align="center" bgcolor="#f5f2fa" style="padding: 40px 24px; background-color: #f5f2fa;">
+        <td class="email-outer" align="center" bgcolor="#ffffff" style="padding: 40px 24px; background-color: #ffffff;">
           <!--[if mso]><table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"><tr><td><![endif]-->
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width: 100%; max-width: 560px;">
             <tr>
-              <td class="email-card" bgcolor="#ffffff" style="background-color: #ffffff; border: 1px solid #e8e0f2; border-radius: 20px;">
+              <td class="email-card" bgcolor="#ffffff" style="background-color: #ffffff; border: 1px solid #dddddd; border-radius: 20px;">
                 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                   <tr>
                     <td class="email-content" style="padding: 40px;">
-                      <img src="https://potato-potential.rgbknights.com/brand/potato-potential-email-logo.png" width="224" height="66" alt="Potato Potential" style="display: block; width: 224px; max-width: 100%; height: auto; border-radius: 8px; color: #2d2238; font-size: 20px; font-weight: bold;" />
-                      <p class="email-eyebrow" style="margin: 32px 0 12px; color: #71509d; font-size: 11px; font-weight: bold; line-height: 16px; letter-spacing: 1.6px; text-transform: uppercase;">YOUR PERSONAL WORKSPACE</p>
-                      <h1 class="email-title" style="margin: 0 0 16px; color: #30243b; font-size: 32px; font-weight: bold; line-height: 40px; letter-spacing: -0.8px;">Your sign-in link is ready.</h1>
-                      <p class="email-copy" style="margin: 0 0 28px; color: #665770; font-size: 16px; line-height: 26px;">Use the button below to continue to Potato Potential. No password needed.</p>
+                      <img src="https://potato-potential.rgbknights.com/brand/potato-potential-wordmark.png" width="224" height="66" alt="Potato Potential" style="display: block; width: 224px; max-width: 100%; height: auto; color: #000000; font-size: 20px; font-weight: bold;" />
+                      <p class="email-eyebrow" style="margin: 32px 0 12px; color: #000000; font-size: 11px; font-weight: bold; line-height: 16px; letter-spacing: 1.6px; text-transform: uppercase;">YOUR PERSONAL WORKSPACE</p>
+                      <h1 class="email-title" style="margin: 0 0 16px; color: #000000; font-size: 32px; font-weight: bold; line-height: 40px; letter-spacing: -0.8px;">Your sign-in link is ready.</h1>
+                      <p class="email-copy" style="margin: 0 0 28px; color: #000000; font-size: 16px; line-height: 26px;">Use the button below to continue to Potato Potential. No password needed.</p>
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                         <tr>
-                          <td align="center" bgcolor="#7048e8" style="background-color: #7048e8; border-radius: 12px; mso-padding-alt: 18px 24px;">
-                            <a href="{{ .ConfirmationURL }}" style="display: block; padding: 18px 24px; color: #ffffff; font-size: 16px; font-weight: bold; line-height: 20px; text-align: center; text-decoration: none; border-radius: 12px; mso-padding-alt: 0;">Sign in to Potato Potential</a>
+                          <td class="email-button" align="center" bgcolor="#9574ED" style="background-color: #9574ED; border: 1px solid #9574ED; border-radius: 12px; mso-padding-alt: 18px 24px;">
+                            <a href="{{ .ConfirmationURL }}" style="display: block; padding: 18px 24px; color: #000000; font-size: 16px; font-weight: bold; line-height: 20px; text-align: center; text-decoration: none; border-radius: 12px; mso-padding-alt: 0;">Sign in to Potato Potential</a>
                           </td>
                         </tr>
                       </table>
-                      <p class="email-muted" style="margin: 16px 0 28px; color: #80718d; font-size: 13px; line-height: 22px;">Button not working? <a class="email-link" href="{{ .ConfirmationURL }}" style="color: #7048e8; text-decoration: underline;">Open your sign-in link</a>.</p>
+                      <p class="email-muted" style="margin: 16px 0 28px; color: #000000; font-size: 13px; line-height: 22px;">Button not working? <a class="email-link" href="{{ .ConfirmationURL }}" style="color: #000000; text-decoration: underline;">Open your sign-in link</a>.</p>
                       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
                         <tr>
-                          <td class="email-note" bgcolor="#f8f5fc" style="padding: 18px 20px; background-color: #f8f5fc; border: 1px solid #ece5f5; border-radius: 12px;">
-                            <p class="email-copy" style="margin: 0 0 6px; color: #574663; font-size: 13px; font-weight: bold; line-height: 20px;">A quick note before you sign in</p>
-                            <p class="email-copy" style="margin: 0; color: #756580; font-size: 13px; line-height: 22px;">Open this link in the same browser where you requested it. The link can be used once and expires shortly.</p>
+                          <td class="email-note" bgcolor="#ffffff" style="padding: 18px 20px; background-color: #ffffff; border: 1px solid #dddddd; border-radius: 12px;">
+                            <p class="email-copy" style="margin: 0 0 6px; color: #000000; font-size: 13px; font-weight: bold; line-height: 20px;">A quick note before you sign in</p>
+                            <p class="email-copy" style="margin: 0; color: #000000; font-size: 13px; line-height: 22px;">Open this link in the same browser where you requested it. The link can be used once and expires shortly.</p>
                           </td>
                         </tr>
                       </table>
@@ -77,9 +65,9 @@
             </tr>
             <tr>
               <td class="email-footer" align="center" style="padding: 24px 32px 0;">
-                <p class="email-muted" style="margin: 0 0 12px; color: #80718d; font-size: 12px; line-height: 20px;">This sign-in link was requested for<br /><strong style="font-weight: normal;">{{ .Email }}</strong></p>
-                <p class="email-muted" style="margin: 0 0 16px; color: #80718d; font-size: 12px; line-height: 20px;">If you didn’t request it, you can safely ignore this email.</p>
-                <p class="email-muted" style="margin: 0; color: #80718d; font-size: 12px; line-height: 20px;">Potato Potential<br />A little help. A lot of possibility.</p>
+                <p class="email-muted" style="margin: 0 0 12px; color: #000000; font-size: 12px; line-height: 20px;">This sign-in link was requested for<br /><strong style="font-weight: normal;">{{ .Email }}</strong></p>
+                <p class="email-muted" style="margin: 0 0 16px; color: #000000; font-size: 12px; line-height: 20px;">If you didn’t request it, you can safely ignore this email.</p>
+                <p class="email-muted" style="margin: 0; color: #000000; font-size: 12px; line-height: 20px;">Potato Potential<br />A little help. A lot of possibility.</p>
               </td>
             </tr>
           </table>

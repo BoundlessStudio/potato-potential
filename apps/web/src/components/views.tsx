@@ -14,7 +14,6 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
-  Copy,
   ExternalLink,
   FileText,
   Lightbulb,
@@ -44,7 +43,7 @@ import {
 } from "@boundless/shared";
 import { api, demo } from "@/lib/client";
 import { Companion } from "./companion";
-import { ComputerSettings } from "./computer-settings";
+import { FileDownloadLink } from "./file-download-link";
 
 type Feedback = {
   onError: (message: string) => void;
@@ -58,9 +57,7 @@ export function Markdown({ children }: { children: string }) {
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          a: (props) => (
-            <a {...props} target="_blank" rel="noopener noreferrer" />
-          ),
+          a: (props) => <FileDownloadLink {...props} />,
         }}
       >
         {children}
@@ -1347,7 +1344,6 @@ export function Settings({
           </div>
         </div>
       </div>
-      {operator && <ComputerSettings />}
       <div className="danger-zone">
         <div>
           <h3>Close your account</h3>
@@ -1454,8 +1450,6 @@ export function Settings({
 }
 export function Operator(feedback: Feedback) {
   const [data, setData] = useState<any>(null);
-  const [email, setEmail] = useState("");
-  const [invite, setInvite] = useState("");
   const [health, setHealth] = useState<any>(null);
   const load = useCallback(async () => {
     try {
@@ -1467,66 +1461,13 @@ export function Operator(feedback: Feedback) {
   useEffect(() => {
     void load();
   }, [load]);
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    try {
-      const result = await api("/operator/invitations", "POST", { email });
-      setInvite(result.url);
-      setEmail("");
-      await load();
-    } catch (error) {
-      feedback.onError(errorText(error));
-    }
-  }
   return (
     <>
       <PageHeading
         eyebrow="Keep the beta in good hands"
         title="A little behind the scenes."
-        description="Invitations, customer agents, and the things that need attention."
+        description="Customer agents and the things that need attention."
       />
-      <div className="settings-card">
-        <h2>Make room for someone.</h2>
-        <form onSubmit={create} className="invite-form">
-          <label>
-            Email address
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="someone@example.com"
-            />
-          </label>
-          <button className="button button-primary">
-            <Plus size={16} />
-            Create invitation
-          </button>
-        </form>
-        {invite && (
-          <div className="invite-result">
-            <code>{invite}</code>
-            <button
-              className="button button-secondary"
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(invite);
-                  feedback.onSuccess("Invitation link copied.");
-                } catch {
-                  feedback.onError("Copy the invitation link shown here.");
-                }
-              }}
-            >
-              <Copy size={15} />
-              Copy link
-            </button>
-          </div>
-        )}
-        <p className="fine-print">
-          Invitations last seven days and are bound to a verified email address.
-          Creating a link does not send an email.
-        </p>
-      </div>
       <div className="section-heading">
         <h2>Your beta companions</h2>
         <button className="text-button" onClick={() => void load()}>

@@ -1,5 +1,9 @@
 import { createBrowserClient } from "@supabase/ssr";
 import { parseSse, type StreamEvent } from "@boundless/shared";
+import {
+  downloadDestination,
+  DOWNLOAD_RETURN_KEY,
+} from "./download-destination";
 export const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const base =
   process.env.NEXT_PUBLIC_CONTROL_URL || (demo ? "http://localhost:4000" : "");
@@ -38,11 +42,17 @@ export async function joinBeta(email: string, website = "") {
     );
   }
 }
-export async function sendSignInLink(email: string) {
+export async function sendSignInLink(email: string, next?: string) {
+  const destination = downloadDestination(next);
+  if (destination !== "/")
+    localStorage.setItem(DOWNLOAD_RETURN_KEY, destination);
+  else localStorage.removeItem(DOWNLOAD_RETURN_KEY);
   if (demo) return;
   const { error } = await supabase().auth.signInWithOtp({
     email: email.trim().toLowerCase(),
-    options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+    options: {
+      emailRedirectTo: `${window.location.origin}/auth/callback`,
+    },
   });
   if (error) throw error;
 }
