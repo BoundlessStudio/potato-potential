@@ -444,7 +444,8 @@ it("round-trips binary data over 4.5 MB in sized pieces, then forwards exact pat
   const download = await call(
     `/files/content?${new URLSearchParams({ instance, path: saved.file!.path })}`,
   );
-  expect(Buffer.from(await download.arrayBuffer())).toEqual(bytes);
+  // A deep assertion on 5 MB blocks the event loop past HTTP keep-alive expiry.
+  expect(Buffer.from(await download.arrayBuffer()).equals(bytes)).toBe(true);
   expect(download.headers.get("content-disposition")).toContain(
     "filename*=UTF-8''r%C3%A9sum%C3%A9.csv",
   );
