@@ -10,7 +10,7 @@ import {
 } from "./computer-services";
 import {
   failComputerOperation,
-  computerBusy,
+  computerOperationPending,
   maintainComputerLocked,
 } from "./computer-maintenance";
 
@@ -118,7 +118,7 @@ export class SupabaseJobs implements Queue {
         .lte("dispatch_after", new Date().toISOString())
         .limit(100),
     );
-    for (const job of jobs || []) await this.dispatch(job.id);
+    await this.dispatchPending(jobs || []);
   }
   async recover(ownerId: string) {
     const jobs = this.check(
@@ -129,8 +129,49 @@ export class SupabaseJobs implements Queue {
         .in("status", ["queued", "running"])
         .lte("dispatch_after", new Date().toISOString()),
     );
-    for (const job of jobs || []) await this.dispatch(job.id);
+    await this.dispatchPending(jobs || []);
   }
+  private async dispatchPending(jobs: { id: string }[]) {
+    let failure: unknown;
+    for (const job of jobs) {
+      try {
+        await this.dispatch(job.id);
+      } catch (error) {
+        failure ||= error;
+      }
+    }
+    // Preserve the failure signal after attempting every independent account.
+    if (failure) throw failure;
+  }
+}
+
+export async function recoverPendingWork(
+  dep: Pick<Dependencies, "repo">,
+  jobs: Pick<SupabaseJobs, "repair" | "send">,
+) {
+  let failure: unknown;
+  try {
+    await jobs.repair();
+  } catch (error) {
+    failure = error;
+  }
+  for (const agent of await dep.repo.agents()) {
+    const kind =
+      agent.status === "deleting"
+        ? "cleanup"
+        : ["new", "provisioning"].includes(agent.status)
+          ? "provision"
+          : agent.status === "ready"
+            ? "reconcile"
+            : null;
+    if (!kind) continue;
+    try {
+      await jobs.send(kind, agent.ownerId);
+    } catch (error) {
+      failure ||= error;
+    }
+  }
+  if (failure) throw failure;
 }
 
 /** One bounded, idempotent slice. Provider ownership is persisted before remote side effects. */
@@ -158,7 +199,7 @@ export async function executeJobSlice(
           agent = await dep.repo.agent(job.owner_id);
         }
         let more = false;
-        if (agent && computerBusy(agent)) {
+        if (agent && computerOperationPending(agent)) {
           maintenanceOperationId = agent.computerOperation!.id;
           more = await maintainComputerLocked(dep, job.owner_id);
         } else more = !!(await reconcileLocked(dep, job.owner_id));

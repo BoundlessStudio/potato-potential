@@ -20,6 +20,7 @@ import {
   Loader2,
   MoreHorizontal,
   Pause,
+  Pencil,
   Play,
   Plus,
   RefreshCw,
@@ -47,6 +48,7 @@ import { FileDownloadLink } from "./file-download-link";
 import { MemorySettings } from "./memory-settings";
 import { BudgetSettings } from "./budget-settings";
 import { UsageSettings } from "./usage-settings";
+import { RoutineEditor } from "./routine-editor";
 
 type Feedback = {
   onError: (message: string) => void;
@@ -457,6 +459,7 @@ export function Routines({
   openSession: (id: string) => void;
 } & Feedback) {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Cron | null>(null);
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
   const [schedule, setSchedule] = useState("30 8 * * 1-5");
@@ -623,6 +626,14 @@ export function Routines({
             <div className="inline-actions">
               <button
                 className="icon-button"
+                aria-label={`Edit ${cron.name}`}
+                title="Edit routine"
+                onClick={() => setEditing({ ...cron })}
+              >
+                <Pencil size={16} />
+              </button>
+              <button
+                className="icon-button"
                 aria-label={`Run ${cron.name}`}
                 onClick={() => void action(cron, "run")}
               >
@@ -686,6 +697,17 @@ export function Routines({
         <p className="quiet-note">
           Your agent’s check-ins will appear here as they happen.
         </p>
+      )}
+      {editing && (
+        <RoutineEditor
+          routine={editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            refresh();
+            feedback.onSuccess("Your routine has a fresh rhythm.");
+          }}
+        />
       )}
       {adding && (
         <Modal title="A little routine" onClose={() => setAdding(false)}>

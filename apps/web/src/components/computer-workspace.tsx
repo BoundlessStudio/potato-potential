@@ -12,18 +12,31 @@ import {
   Link as LinkIcon,
   Plus,
   RefreshCw,
+  Sparkles,
 } from "lucide-react";
 import type {
   ComputerMetrics,
   ComputerService,
   Profile,
   PublicComputerLink,
+  PublicAgent,
 } from "@boundless/shared";
 import { api } from "@/lib/client";
-import { Computer } from "./computer";
-import { ComputerSettings, type ComputerStatus } from "./computer-settings";
+import { Computer, type ComputerHandle } from "./computer";
+import { ComputerWorkspaceArt } from "./computer-workspace-art";
+import {
+  ComputerMaintenance,
+  ComputerSettings,
+  type ComputerStatus,
+} from "./computer-settings";
 import { Modal } from "./modal";
 import styles from "./computer-workspace.module.css";
+import { ComputerFiles } from "./computer-files";
+import {
+  BackupButton,
+  ComputerCheckpoints,
+  useComputerBackups,
+} from "./computer-backups";
 
 const durations = [
   { value: 900, label: "15 minutes" },
@@ -31,6 +44,15 @@ const durations = [
   { value: 86400, label: "24 hours" },
   { value: 604800, label: "Seven days" },
 ];
+const linkStatuses: Record<PublicComputerLink["status"], string> = {
+  pending: "Waiting for your go-ahead",
+  publishing: "Making your link…",
+  approved: "Ready to open",
+  rejected: "Not shared",
+  failed: "Needs another try",
+  revoked: "Closed",
+  expired: "Expired",
+};
 type Services = {
   services: ComputerService[];
   requests: PublicComputerLink[];
@@ -104,19 +126,34 @@ function ResourceChart({
 }
 export function ComputerWorkspace({
   profile,
+  agent,
   onReturn,
   onError,
+  onRestored,
   requestId,
 }: {
   profile: Profile;
+  agent: PublicAgent;
   onReturn: () => void;
   onError: (message: string) => void;
+  onRestored: () => void;
   requestId?: string;
 }) {
+  const [view, setView] = useState<
+    "overview" | "files" | "services" | "resources" | "checkpoints"
+  >("overview");
+  const [filesVisited, setFilesVisited] = useState(false);
   const [status, setStatus] = useState<ComputerStatus | null>(null);
+  const [statusError, setStatusError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshingRef = useRef(false);
+  const desktopRef = useRef<ComputerHandle>(null);
+  const statusRead = useRef(0);
+  const metricsRead = useRef(0);
   const [data, setData] = useState<Services | null>(null);
   const [metrics, setMetrics] = useState<ComputerMetrics | null>(null);
   const [metricsError, setMetricsError] = useState("");
+  const [metricsRefreshing, setMetricsRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -129,6 +166,28 @@ export function ComputerWorkspace({
   const [decision, setDecision] = useState<PublicComputerLink | null>(null);
   const [disable, setDisable] = useState<ComputerService | null>(null);
   const createId = useRef("");
+  const backups = useComputerBackups();
+  const restoredOperation = useRef("");
+  const maintenance =
+    (!!status?.operation &&
+      status.operation.action !== "backup" &&
+      ["queued", "applying", "checking"].includes(status.operation.phase)) ||
+    (backups.working && backups.data?.operation?.action === "restore") ||
+    !!backups.data?.operation?.needsReconnect;
+  const refreshStatus = useCallback(async () => {
+    const read = ++statusRead.current;
+    try {
+      const next = await api<ComputerStatus>("/computer/status");
+      if (read === statusRead.current) {
+        setStatus(next);
+        setStatusError("");
+      }
+      return next;
+    } catch (cause) {
+      if (read === statusRead.current) setStatusError(message(cause));
+      return null;
+    }
+  }, []);
   const refresh = useCallback(async () => {
     try {
       setData(await api<Services>("/computer/services"));
@@ -138,17 +197,43 @@ export function ComputerWorkspace({
     }
   }, []);
   const refreshMetrics = useCallback(async () => {
+    const read = ++metricsRead.current;
+    setMetricsRefreshing(true);
     try {
-      setMetrics(await api<ComputerMetrics>("/computer/metrics"));
-      setMetricsError("");
+      const next = await api<ComputerMetrics>("/computer/metrics");
+      if (read === metricsRead.current) {
+        setMetrics(next);
+        setMetricsError("");
+      }
     } catch (cause) {
-      setMetricsError(message(cause));
+      if (read === metricsRead.current) setMetricsError(message(cause));
+    } finally {
+      if (read === metricsRead.current) setMetricsRefreshing(false);
     }
   }, []);
   useEffect(() => {
+    const op = backups.data?.operation;
+    if (
+      op?.action !== "restore" ||
+      op.phase !== "completed" ||
+      restoredOperation.current === op.id
+    )
+      return;
+    restoredOperation.current = op.id;
+    onRestored();
+    void Promise.all([refreshStatus(), refreshMetrics(), refresh()]);
+  }, [
+    backups.data?.operation,
+    onRestored,
+    refreshStatus,
+    refreshMetrics,
+    refresh,
+  ]);
+  useEffect(() => {
     void refresh();
     void refreshMetrics();
-  }, [refresh, refreshMetrics]);
+    void refreshStatus();
+  }, [refresh, refreshMetrics, refreshStatus]);
   useEffect(() => {
     const timer = setInterval(() => {
       if (!document.hidden) void refresh();
@@ -156,14 +241,48 @@ export function ComputerWorkspace({
     return () => clearInterval(timer);
   }, [refresh]);
   useEffect(() => {
-    if (requestId && data)
+    if (requestId) setView("services");
+  }, [requestId]);
+  useEffect(() => {
+    const timer = setInterval(
+      () => {
+        if (!document.hidden && !refreshingRef.current) void refreshStatus();
+      },
+      maintenance ? 2500 : 15000,
+    );
+    return () => clearInterval(timer);
+  }, [maintenance, refreshStatus]);
+  useEffect(() => {
+    if (requestId && data && view === "services") {
       document
         .getElementById(`computer-request-${requestId}`)
         ?.scrollIntoView({ block: "nearest" });
-  }, [requestId, data]);
-  const maintenance =
-    !!status?.operation &&
-    ["queued", "applying", "checking"].includes(status.operation.phase);
+    }
+  }, [requestId, data, view]);
+  async function refreshComputer() {
+    if (refreshingRef.current) return;
+    refreshingRef.current = true;
+    setRefreshing(true);
+    try {
+      await Promise.all([
+        refreshStatus().then((next) => {
+          if (
+            next &&
+            next.canManage !== false &&
+            !agent.suspended &&
+            !["queued", "applying", "checking"].includes(
+              next.operation?.phase || "",
+            )
+          )
+            desktopRef.current?.refresh();
+        }),
+        refreshMetrics(),
+      ]);
+    } finally {
+      refreshingRef.current = false;
+      setRefreshing(false);
+    }
+  }
   const allowed =
     !!data?.publicationAllowed && status?.canManage !== false && !maintenance;
   async function act(work: () => Promise<unknown>) {
@@ -195,312 +314,449 @@ export function ComputerWorkspace({
     ) || [];
   return (
     <div className={styles.workspace}>
-      <header>
-        <span className="eyebrow">Their space to work</span>
-        <h1>Computer</h1>
-        <p className="muted">
-          Watch your companion work, manage their computer, and share services
-          when you’re ready.
-        </p>
-      </header>
-      {loadError && (
-        <p className="error-inline" role="alert">
-          {loadError}
-        </p>
-      )}
-      {error && !register && !create && !decision && !disable && (
-        <p className="error-inline" role="alert">
-          {error}
-        </p>
-      )}
-      <div className={styles.overview}>
-        <div className={styles.desktop}>
-          <Computer
-            profile={profile}
-            autoConnect={false}
-            available={!!status && status.canManage !== false && !maintenance}
-            onReturn={onReturn}
+      <header className={styles.hero}>
+        <div className={styles.heroCopy}>
+          <span className="eyebrow">
+            <Sparkles size={13} /> A little room for big things
+          </span>
+          <h1>Computer</h1>
+          <p className="muted">
+            {profile.agentName}’s own little workspace. Take a peek, lend a
+            hand, and see what’s taking shape.
+          </p>
+        </div>
+        <div className={styles.heroArt} aria-hidden="true">
+          <ComputerWorkspaceArt />
+        </div>
+        <div className={styles.heroActions}>
+          <BackupButton
+            backups={backups}
+            available={!agent.suspended && !maintenance}
             onError={onError}
           />
+          <ComputerMaintenance
+            blocked={
+              backups.working ||
+              backups.submitting ||
+              !!backups.data?.operation?.needsReconnect
+            }
+            status={status}
+            statusError={statusError}
+            refresh={refreshStatus}
+            refreshing={refreshing}
+            onError={onError}
+            className={styles.maintenanceActions}
+          />
         </div>
-        <div className={styles.details}>
-          <ComputerSettings onStatus={setStatus} />
-          <section className={styles.section} aria-label="Resource metrics">
+      </header>
+      <div className={styles.tabs} role="group" aria-label="Computer view">
+        <button
+          type="button"
+          aria-pressed={view === "overview"}
+          onClick={() => setView("overview")}
+        >
+          Overview
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "files"}
+          onClick={() => {
+            setFilesVisited(true);
+            setView("files");
+          }}
+        >
+          Files
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "services"}
+          onClick={() => setView("services")}
+        >
+          Remote access
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "resources"}
+          onClick={() => setView("resources")}
+        >
+          Resource usage
+        </button>
+        <button
+          type="button"
+          aria-pressed={view === "checkpoints"}
+          onClick={() => setView("checkpoints")}
+        >
+          Checkpoints
+        </button>
+      </div>
+      {view === "checkpoints" && (
+        <ComputerCheckpoints
+          backups={backups}
+          name={profile.agentName}
+          onRestored={() => {
+            void Promise.all([refreshStatus(), refreshMetrics(), refresh()]);
+            setView("overview");
+          }}
+        />
+      )}
+      {filesVisited && (
+        <div hidden={view !== "files"}>
+          <ComputerFiles
+            key={agent.instanceId}
+            owner={profile.id}
+            instance={agent.instanceId!}
+            available={
+              !agent.suspended && status?.canManage !== false && !maintenance
+            }
+          />
+        </div>
+      )}
+      {view === "overview" && (
+        <div className={styles.overview}>
+          <div className={styles.desktop}>
+            <Computer
+              ref={desktopRef}
+              profile={profile}
+              autoConnect={false}
+              screenSize={status?.screen}
+              available={
+                !!status &&
+                !statusError &&
+                !agent.suspended &&
+                status.canManage !== false &&
+                !maintenance
+              }
+              onReturn={onReturn}
+              onError={onError}
+            />
+          </div>
+          <div className={styles.details}>
+            <ComputerSettings
+              status={status}
+              statusError={statusError}
+              onRefresh={() => void refreshComputer()}
+              refreshing={refreshing}
+            />
+          </div>
+        </div>
+      )}
+      {view === "resources" && (
+        <section className={styles.section} aria-label="Resource metrics">
+          <div className={styles.heading}>
+            <h2>Resource usage</h2>
+            <button
+              type="button"
+              className={`icon-button ${styles.metricsRefresh}`}
+              aria-label={
+                metricsRefreshing ? "Refreshing metrics…" : "Refresh metrics"
+              }
+              title="Refresh resource usage"
+              disabled={metricsRefreshing}
+              onClick={() => void refreshMetrics()}
+            >
+              <RefreshCw
+                size={16}
+                className={metricsRefreshing ? "spin" : ""}
+              />
+            </button>
+          </div>
+          <p className="muted">
+            Past 24 hours. Dashed lines show limits; gaps show periods without
+            samples.
+          </p>
+          {metricsError && (
+            <p role="status" className="error-inline">
+              {metricsError}
+            </p>
+          )}
+          {metrics ? (
+            <>
+              <div className={styles.metrics}>
+                <ResourceChart
+                  label="CPU"
+                  points={metrics.series.cpu_cores}
+                  limit={metrics.limits.cpu_cores}
+                  metrics={metrics}
+                />
+                <ResourceChart
+                  label="Memory"
+                  points={metrics.series.memory_bytes}
+                  limit={metrics.limits.memory_bytes}
+                  metrics={metrics}
+                  bytes
+                />
+                <ResourceChart
+                  label="Disk"
+                  points={metrics.series.disk_bytes}
+                  limit={metrics.limits.disk_bytes}
+                  metrics={metrics}
+                  bytes
+                />
+              </div>
+              <p className="fine-print">
+                Fetched {new Date(metrics.fetched_at * 1000).toLocaleString()}
+                {metricsError ? " · Showing the previous snapshot." : ""}
+              </p>
+            </>
+          ) : (
+            !metricsError && <p>Loading resource metrics…</p>
+          )}
+        </section>
+      )}
+      {view === "services" && (
+        <>
+          {loadError && (
+            <p className="error-inline" role="alert">
+              {loadError}
+            </p>
+          )}
+          {error && !register && !create && !decision && !disable && (
+            <p className="error-inline" role="alert">
+              {error}
+            </p>
+          )}
+          <section className={styles.section} aria-label="Ready to share?">
+            <h2>Ready to share?</h2>
+            <p className="muted">
+              {profile.agentName} asks here before making a link to something on
+              their computer. Take a look, then give the go-ahead.
+            </p>
+            {!data ? (
+              <p className="muted">Gathering link requests…</p>
+            ) : pending.length ? (
+              pending.map((row) => (
+                <article
+                  key={row.id}
+                  id={`computer-request-${row.id}`}
+                  className={`${styles.request} ${requestId === row.id ? styles.highlight : ""}`}
+                >
+                  <div>
+                    <h3>
+                      {row.label} <small>Port {row.port}</small>
+                    </h3>
+                    <p>{row.reason}</p>
+                    <p className="muted">
+                      {row.source === "agent"
+                        ? `${profile.agentName} would like to share this`
+                        : "Created by you"}{" "}
+                      ·{" "}
+                      {row.kind === "signed"
+                        ? `Temporary link · ${durations.find((item) => item.value === row.ttlSeconds)?.label || "Expires automatically"}`
+                        : "Public link · Open until you close it"}{" "}
+                      · {linkStatuses[row.status]}
+                    </p>
+                    {row.error && <p className="error-inline">{row.error}</p>}
+                  </div>
+                  <div className={styles.actions}>
+                    {["pending", "failed"].includes(row.status) && (
+                      <>
+                        <button
+                          className="button button-primary"
+                          disabled={busy || !allowed}
+                          onClick={() => setDecision(row)}
+                        >
+                          {row.status === "failed"
+                            ? "Try again"
+                            : "Review link"}
+                        </button>
+                        <button
+                          className="text-button"
+                          disabled={busy}
+                          onClick={() =>
+                            void act(() =>
+                              api(
+                                `/computer/requests/${row.id}/reject`,
+                                "POST",
+                                {},
+                              ),
+                            )
+                          }
+                        >
+                          Decline
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </article>
+              ))
+            ) : (
+              <p className="muted">Nothing needs your go-ahead just now.</p>
+            )}
+          </section>
+          <section className={styles.section} aria-label="Remote access">
             <div className={styles.heading}>
-              <h2>Resource usage</h2>
+              <h2>Remote access</h2>
               <button
-                className="text-button"
-                onClick={() => void refreshMetrics()}
+                className="button button-secondary"
+                disabled={busy || !allowed}
+                onClick={() => setRegister(true)}
               >
-                <RefreshCw size={14} /> Refresh metrics
+                <Plus size={15} /> Add a doorway
               </button>
             </div>
             <p className="muted">
-              Past 24 hours. Dashed lines show limits; gaps show periods without
-              samples.
+              Websites, dashboards, and other little helpers from{" "}
+              {profile.agentName}’s computer. Make a link and let someone take a
+              peek.
             </p>
-            {metricsError && (
-              <p role="status" className="error-inline">
-                {metricsError}
+            <p className="muted">
+              Choose a temporary link for a quick peek, or a public link that
+              stays open until you close it.
+            </p>
+            {!data ? (
+              <p>Gathering things to share…</p>
+            ) : !data.services.length ? (
+              <p className="muted">
+                Nothing here yet. Ask {profile.agentName} to set something up,
+                or add a doorway to something that’s already on their computer.
               </p>
-            )}
-            {metrics ? (
-              <>
-                <div className={styles.metrics}>
-                  <ResourceChart
-                    label="CPU"
-                    points={metrics.series.cpu_cores}
-                    limit={metrics.limits.cpu_cores}
-                    metrics={metrics}
-                  />
-                  <ResourceChart
-                    label="Memory"
-                    points={metrics.series.memory_bytes}
-                    limit={metrics.limits.memory_bytes}
-                    metrics={metrics}
-                    bytes
-                  />
-                  <ResourceChart
-                    label="Disk"
-                    points={metrics.series.disk_bytes}
-                    limit={metrics.limits.disk_bytes}
-                    metrics={metrics}
-                    bytes
-                  />
-                </div>
-                <p className="fine-print">
-                  Fetched {new Date(metrics.fetched_at * 1000).toLocaleString()}
-                  {metricsError ? " · Showing the previous snapshot." : ""}
-                </p>
-              </>
             ) : (
-              !metricsError && <p>Loading resource metrics…</p>
-            )}
-          </section>
-        </div>
-      </div>
-      <section className={styles.section} aria-label="Publication requests">
-        <h2>Publication requests</h2>
-        {pending.length ? (
-          pending.map((row) => (
-            <article
-              key={row.id}
-              id={`computer-request-${row.id}`}
-              className={`${styles.request} ${requestId === row.id ? styles.highlight : ""}`}
-            >
-              <div>
-                <h3>
-                  {row.label} <small>Port {row.port}</small>
-                </h3>
-                <p>{row.reason}</p>
-                <p className="muted">
-                  {row.source === "agent"
-                    ? "Requested by your companion"
-                    : "Created by you"}{" "}
-                  ·{" "}
-                  {row.kind === "signed"
-                    ? `Signed link · ${durations.find((item) => item.value === row.ttlSeconds)?.label}`
-                    : "Permanent public link"}{" "}
-                  · {row.status}
-                </p>
-                {row.error && <p className="error-inline">{row.error}</p>}
-              </div>
-              <div className={styles.actions}>
-                {["pending", "failed"].includes(row.status) && (
-                  <>
-                    <button
-                      className="button button-primary"
-                      disabled={busy || !allowed}
-                      onClick={() => setDecision(row)}
-                    >
-                      {row.status === "failed"
-                        ? "Retry approval"
-                        : "Review request"}
-                    </button>
-                    <button
-                      className="text-button"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(() =>
-                          api(
-                            `/computer/requests/${row.id}/reject`,
-                            "POST",
-                            {},
-                          ),
-                        )
-                      }
-                    >
-                      Reject
-                    </button>
-                  </>
-                )}
-              </div>
-            </article>
-          ))
-        ) : (
-          <p className="muted">No requests waiting for approval.</p>
-        )}
-      </section>
-      <section className={styles.section} aria-label="Registered services">
-        <div className={styles.heading}>
-          <h2>Services</h2>
-          <button
-            className="button button-secondary"
-            disabled={busy || !allowed}
-            onClick={() => setRegister(true)}
-          >
-            <Plus size={15} /> Register service
-          </button>
-        </div>
-        <p className="muted">
-          Registered services only. Checking or publishing a service can wake
-          the computer.
-        </p>
-        {!data ? (
-          <p>Loading services…</p>
-        ) : !data.services.length ? (
-          <p className="muted">
-            Register an HTTP service by its port, or let your companion request
-            a link.
-          </p>
-        ) : (
-          data.services.map((service) => {
-            const links = data.requests.filter(
-              (row) =>
-                row.port === service.port &&
-                ["approved", "expired", "revoked"].includes(row.status),
-            );
-            const publicLink = links.find(
-              (row) => row.kind === "public" && row.status === "approved",
-            );
-            return (
-              <article className={styles.service} key={service.port}>
-                <div className={styles.heading}>
-                  <h3>
-                    {service.label} <small>Port {service.port}</small>
-                  </h3>
-                  <span>
-                    {status?.instanceStatus !== "running"
-                      ? `Computer ${status?.instanceStatus || "unknown"}`
-                      : service.state.replaceAll("_", " ")}
-                  </span>
-                </div>
-                <p className="fine-print">
-                  {service.checkedAt
-                    ? `Last checked ${new Date(service.checkedAt).toLocaleString()}`
-                    : "Service availability hasn’t been checked yet."}
-                </p>
-                <div className={styles.actions}>
-                  <button
-                    className="text-button"
-                    disabled={busy || !allowed}
-                    onClick={() =>
-                      void act(() =>
-                        api(
-                          `/computer/services/${service.port}/check`,
-                          "POST",
-                          {},
-                        ),
-                      )
-                    }
-                  >
-                    Check service
-                  </button>
-                  <button
-                    className="button button-secondary"
-                    disabled={busy || !allowed}
-                    onClick={() => {
-                      createId.current = crypto.randomUUID();
-                      setKind("signed");
-                      setTtl(3600);
-                      setCreate(service);
-                    }}
-                  >
-                    <LinkIcon size={14} /> Create link
-                  </button>
-                  {publicLink && (
-                    <button
-                      className="text-button"
-                      disabled={
-                        busy || service.publicRemoval?.phase === "queued"
-                      }
-                      onClick={() => setDisable(service)}
-                    >
-                      {service.publicRemoval?.phase === "failed"
-                        ? "Retry disabling public link"
-                        : "Disable public link"}
-                    </button>
-                  )}
-                </div>
-                {service.publicRemoval && (
-                  <p
-                    role="status"
-                    className={
-                      service.publicRemoval.phase === "failed"
-                        ? "error-inline"
-                        : "muted"
-                    }
-                  >
-                    {service.publicRemoval.error || "Disabling public link…"}
-                  </p>
-                )}
-                {links.length > 0 && (
-                  <ul className={styles.links}>
-                    {links.slice(0, 10).map((link) => (
-                      <li key={link.id}>
-                        <div>
-                          <strong>
-                            {link.kind === "signed"
-                              ? "Signed preview"
-                              : "Public link"}
-                          </strong>
-                          <small>
-                            {link.status}
-                            {link.expiresAt
-                              ? ` · Expires ${new Date(link.expiresAt).toLocaleString()}`
-                              : ""}
-                          </small>
-                        </div>
-                        {link.url &&
-                          (link.kind === "signed" ||
-                            !service.publicRemoval) && (
-                            <div className={styles.actions}>
-                              <a
-                                href={link.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-button"
-                              >
-                                Open <ArrowUpRight size={14} />
-                              </a>
-                              <button
-                                className="text-button"
-                                onClick={() =>
-                                  void navigator.clipboard
-                                    .writeText(link.url!)
-                                    .catch((cause) => setError(message(cause)))
-                                }
-                              >
-                                <Copy size={13} /> Copy
-                              </button>
+              data.services.map((service) => {
+                const links = data.requests.filter(
+                  (row) =>
+                    row.port === service.port &&
+                    ["approved", "expired", "revoked"].includes(row.status),
+                );
+                const publicLink = links.find(
+                  (row) => row.kind === "public" && row.status === "approved",
+                );
+                return (
+                  <article className={styles.service} key={service.port}>
+                    <div className={styles.heading}>
+                      <h3>
+                        {service.label} <small>Port {service.port}</small>
+                      </h3>
+                      <span>
+                        {status?.instanceStatus !== "running"
+                          ? `Computer ${status?.instanceStatus || "unknown"}`
+                          : {
+                              unknown: "Not checked yet",
+                              running: "Ready for a peek",
+                              not_running: "Not running right now",
+                            }[service.state]}
+                      </span>
+                    </div>
+                    <p className="fine-print">
+                      {service.checkedAt
+                        ? `Last checked ${new Date(service.checkedAt).toLocaleString()}`
+                        : "Take a peek to see if this is ready to open."}
+                    </p>
+                    <div className={styles.actions}>
+                      <button
+                        className="text-button"
+                        disabled={busy || !allowed}
+                        onClick={() =>
+                          void act(() =>
+                            api(
+                              `/computer/services/${service.port}/check`,
+                              "POST",
+                              {},
+                            ),
+                          )
+                        }
+                      >
+                        Check it’s ready
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        disabled={busy || !allowed}
+                        onClick={() => {
+                          createId.current = crypto.randomUUID();
+                          setKind("signed");
+                          setTtl(3600);
+                          setCreate(service);
+                        }}
+                      >
+                        <LinkIcon size={14} /> Make a link
+                      </button>
+                      {publicLink && (
+                        <button
+                          className="text-button"
+                          disabled={
+                            busy || service.publicRemoval?.phase === "queued"
+                          }
+                          onClick={() => setDisable(service)}
+                        >
+                          {service.publicRemoval?.phase === "failed"
+                            ? "Try closing link again"
+                            : "Close public link"}
+                        </button>
+                      )}
+                    </div>
+                    {service.publicRemoval && (
+                      <p
+                        role="status"
+                        className={
+                          service.publicRemoval.phase === "failed"
+                            ? "error-inline"
+                            : "muted"
+                        }
+                      >
+                        {service.publicRemoval.error || "Closing public link…"}
+                      </p>
+                    )}
+                    {links.length > 0 && (
+                      <ul className={styles.links}>
+                        {links.slice(0, 10).map((link) => (
+                          <li key={link.id}>
+                            <div>
+                              <strong>
+                                {link.kind === "signed"
+                                  ? "Temporary link"
+                                  : "Public link"}
+                              </strong>
+                              <small>
+                                {linkStatuses[link.status]}
+                                {link.expiresAt
+                                  ? ` · Expires ${new Date(link.expiresAt).toLocaleString()}`
+                                  : ""}
+                              </small>
                             </div>
-                          )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            );
-          })
-        )}
-        <p className="fine-print">
-          Desktop, browser debugging, Inkbox, and native channel endpoints are
-          managed by the application.
-        </p>
-      </section>
+                            {link.url &&
+                              (link.kind === "signed" ||
+                                !service.publicRemoval) && (
+                                <div className={styles.actions}>
+                                  <a
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-button"
+                                  >
+                                    Open <ArrowUpRight size={14} />
+                                  </a>
+                                  <button
+                                    className="text-button"
+                                    onClick={() =>
+                                      void navigator.clipboard
+                                        .writeText(link.url!)
+                                        .catch((cause) =>
+                                          setError(message(cause)),
+                                        )
+                                    }
+                                  >
+                                    <Copy size={13} /> Copy
+                                  </button>
+                                </div>
+                              )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
+                );
+              })
+            )}
+            <p className="fine-print">
+              Checking if it’s ready or making a link can wake{" "}
+              {profile.agentName}’s computer. Visits through a public link can
+              keep it awake.
+            </p>
+          </section>
+        </>
+      )}
       {register && (
         <Modal
-          title="Register an HTTP service"
+          title="Add a doorway"
           onClose={() => {
             if (!busy) setRegister(false);
           }}
@@ -512,17 +768,17 @@ export function ComputerWorkspace({
               </p>
             )}
             <label>
-              Service name
+              What’s it called?
               <input
                 value={label}
                 onChange={(event) => setLabel(event.target.value)}
                 required
                 maxLength={64}
-                placeholder="Project preview"
+                placeholder="My little dashboard"
               />
             </label>
             <label>
-              Port
+              Port number
               <input
                 type="number"
                 min={1}
@@ -534,18 +790,20 @@ export function ComputerWorkspace({
               />
             </label>
             <p className="muted">
-              Registration records the service. Use Check service to verify it
-              is running.
+              Choose what’s behind the door: a website, dashboard, or handy tool
+              on {profile.agentName}’s computer. Adding it here doesn’t start it
+              or share it yet. Make a link when you’re ready to let someone in.
+              Not sure which port it uses? Ask {profile.agentName}.
             </p>
             <button className="button button-primary" disabled={busy}>
-              {busy ? "Saving…" : "Register service"}
+              {busy ? "Adding…" : "Add a doorway"}
             </button>
           </form>
         </Modal>
       )}
       {create && (
         <Modal
-          title={`Create a link for ${create.label}`}
+          title={`Share ${create.label}`}
           onClose={() => {
             if (!busy) setCreate(null);
           }}
@@ -557,22 +815,22 @@ export function ComputerWorkspace({
               </p>
             )}
             <label>
-              Link type
+              How would you like to share it?
               <select
                 value={kind}
                 onChange={(event) =>
                   setKind(event.target.value as "signed" | "public")
                 }
               >
-                <option value="signed">Signed preview</option>
+                <option value="signed">Temporary link · a quick peek</option>
                 <option value="public" disabled={!!create.publicRemoval}>
-                  Permanent public link
+                  Public link · keep the door open
                 </option>
               </select>
             </label>
             {kind === "signed" && (
               <label>
-                Expiry
+                Keep it open for
                 <select
                   value={ttl}
                   onChange={(event) => setTtl(Number(event.target.value))}
@@ -587,8 +845,8 @@ export function ComputerWorkspace({
             )}
             <p>
               {kind === "signed"
-                ? "Anyone with the link can open this service until it expires. It cannot be disabled early."
-                : "Anyone with the public URL can access this service until you disable it. Public traffic can wake the computer and keep it running."}
+                ? `A quick peek, with a time limit. Anyone with this link can open ${create.label} until it expires. It cannot be disabled early.`
+                : `Keep the door open to ${create.label}. Anyone with this public link can visit until you close it. Visits can wake ${profile.agentName}’s computer and keep it running.`}
             </p>
             <button
               className="button button-primary"
@@ -609,15 +867,15 @@ export function ComputerWorkspace({
               {busy
                 ? "Creating…"
                 : kind === "signed"
-                  ? "Create signed link"
-                  : "Create public link"}
+                  ? "Make temporary link"
+                  : "Make public link"}
             </button>
           </div>
         </Modal>
       )}
       {decision && (
         <Modal
-          title="Approve this service link?"
+          title="Give this link the go-ahead?"
           onClose={() => {
             if (!busy) setDecision(null);
           }}
@@ -634,8 +892,8 @@ export function ComputerWorkspace({
             <p>{decision.reason}</p>
             <p>
               {decision.kind === "signed"
-                ? `This signed link will last ${durations.find((item) => item.value === decision.ttlSeconds)?.label.toLowerCase()}. Anyone with it can access the service until expiry; it cannot be disabled early.`
-                : "This creates a permanent public link. Anyone with the URL can access the service until you disable it; traffic may wake the computer."}
+                ? `A temporary link for a little peek. Anyone with it can open ${decision.label} for ${durations.find((item) => item.value === decision.ttlSeconds)?.label.toLowerCase() || "the requested time"}. It cannot be disabled early.`
+                : `A public link keeps the door open to ${decision.label}. Anyone with it can visit until you close it. Visits can wake ${profile.agentName}’s computer and keep it running.`}
             </p>
             <button
               className="button button-primary"
@@ -646,21 +904,21 @@ export function ComputerWorkspace({
                 )
               }
             >
-              {busy ? "Approving…" : "Approve link"}
+              {busy ? "Giving the go-ahead…" : "Give the go-ahead"}
             </button>
           </div>
         </Modal>
       )}
       {disable && (
         <Modal
-          title="Disable this public link?"
+          title="Close this public link?"
           onClose={() => {
             if (!busy) setDisable(null);
           }}
         >
           <p>
-            The public URL for {disable.label} will stop working. Signed links
-            remain valid until their expiry.
+            The public link to {disable.label} will stop letting visitors in.
+            Any temporary links will still work until they expire.
           </p>
           {error && (
             <p className="error-inline" role="alert">
@@ -676,7 +934,7 @@ export function ComputerWorkspace({
               )
             }
           >
-            {busy ? "Disabling…" : "Disable public link"}
+            {busy ? "Closing…" : "Close public link"}
           </button>
         </Modal>
       )}

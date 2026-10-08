@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Check, Loader2, Lock, Mail, RefreshCw, X } from "lucide-react";
+import { Check, Loader2, Lock, Mail, RefreshCw, Trash2, X } from "lucide-react";
 import { Brand } from "./companion";
+import { Modal } from "./modal";
 
 type Applicant = {
   email: string;
   requestedAt: string;
   status: "awaiting_review" | "approved" | "accepted" | "pending" | "expired";
   accountExists: boolean;
+  accountClosing?: boolean;
 };
 const labels = {
   awaiting_review: "Awaiting review",
@@ -33,16 +35,28 @@ class BetaError extends Error {
 async function betaApi<T>(
   credential: string,
   path: string,
-  email?: string,
-  signal?: AbortSignal,
+  options: {
+    email?: string;
+    signal?: AbortSignal;
+    method?: "GET" | "POST" | "DELETE";
+    closeAccount?: boolean;
+  } = {},
 ): Promise<T> {
+  const { email, signal } = options;
   const response = await fetch(`${base}/api/beta${path}`, {
-    method: email ? "POST" : "GET",
+    method: options.method || (email ? "POST" : "GET"),
     headers: {
       Authorization: `Bearer ${credential}`,
       "Content-Type": "application/json",
     },
-    ...(email ? { body: JSON.stringify({ email }) } : {}),
+    ...(email
+      ? {
+          body: JSON.stringify({
+            email,
+            ...(options.closeAccount ? { closeAccount: true } : {}),
+          }),
+        }
+      : {}),
     cache: "no-store",
     signal,
   });
@@ -62,6 +76,9 @@ export function BetaWorkspace() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
+  const [closingPerson, setClosingPerson] = useState<Applicant | null>(null);
+  const busy = loading || Boolean(sending) || Boolean(removing);
   const [message, setMessage] = useState<{
     text: string;
     error: boolean;
@@ -72,6 +89,7 @@ export function BetaWorkspace() {
     setAccess("");
     setPeople(null);
     setSearch("");
+    setClosingPerson(null);
   }
   function onError(error: unknown) {
     if (error instanceof BetaError && error.status === 401) lock();
@@ -89,8 +107,7 @@ export function BetaWorkspace() {
       const result = await betaApi<{ requests: Applicant[] }>(
         credential,
         "/requests",
-        undefined,
-        signal,
+        { signal },
       );
       if (signal?.aborted) return false;
       sessionStorage.setItem(storageKey, credential);
@@ -112,6 +129,12 @@ export function BetaWorkspace() {
     if (credential) void load(credential, controller.signal);
     return () => controller.abort();
   }, []);
+  useEffect(() => {
+    if (!access || busy || !people?.some((person) => person.accountClosing))
+      return;
+    const timer = setTimeout(() => void load(access), 3000);
+    return () => clearTimeout(timer);
+  }, [access, people, busy]);
   async function unlock(event: FormEvent) {
     event.preventDefault();
     if (loading) return;
@@ -119,7 +142,7 @@ export function BetaWorkspace() {
     await load(input.trim());
   }
   async function approve(person: Applicant) {
-    if (sending || person.accountExists) return;
+    if (busy || person.accountExists) return;
     setSending(person.email);
     setMessage(null);
     let authorized = true;
@@ -127,7 +150,7 @@ export function BetaWorkspace() {
       const result = await betaApi<{ email: string; demo: boolean }>(
         access,
         "/invitations",
-        person.email,
+        { email: person.email },
       );
       setMessage({
         text: result.demo
@@ -141,6 +164,45 @@ export function BetaWorkspace() {
     } finally {
       if (authorized) await load(access);
       setSending(null);
+    }
+  }
+  async function remove(person: Applicant) {
+    if (busy) return;
+    setRemoving(person.email);
+    setMessage(null);
+    try {
+      const result = await betaApi<{
+        email: string;
+        removed: boolean;
+        queued?: boolean;
+      }>(access, "/requests", {
+        email: person.email,
+        method: "DELETE",
+        closeAccount: person.accountExists,
+      });
+      setPeople(
+        (current) =>
+          (result.queued
+            ? current?.map((row) =>
+                row.email === result.email
+                  ? { ...row, accountClosing: true }
+                  : row,
+              )
+            : current?.filter((row) => row.email !== result.email)) ?? null,
+      );
+      setClosingPerson(null);
+      setMessage({
+        text: result.queued
+          ? `Account closure started for ${result.email}. The beta entry will be removed when cleanup finishes.`
+          : `${result.email} removed from the beta list.`,
+        error: false,
+      });
+    } catch (error) {
+      onError(error);
+      if (!(error instanceof BetaError && error.status === 401))
+        await load(access);
+    } finally {
+      setRemoving(null);
     }
   }
   const filtered = people?.filter((person) =>
@@ -158,7 +220,7 @@ export function BetaWorkspace() {
               lock();
               setMessage(null);
             }}
-            disabled={loading || Boolean(sending)}
+            disabled={busy}
           >
             <Lock size={16} /> Lock beta list
           </button>
@@ -217,7 +279,7 @@ export function BetaWorkspace() {
             </h2>
             <button
               className="text-button"
-              disabled={loading || Boolean(sending)}
+              disabled={busy}
               onClick={() => {
                 setMessage(null);
                 void load(access);
@@ -256,6 +318,7 @@ export function BetaWorkspace() {
                     <th scope="col">Status</th>
                     <th scope="col">User account</th>
                     <th scope="col">Review</th>
+                    <th scope="col">Removal</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -273,7 +336,11 @@ export function BetaWorkspace() {
                         </span>
                       </td>
                       <td data-label="User account">
-                        {person.accountExists ? "Created" : "Not created"}
+                        {person.accountClosing
+                          ? "Closing account"
+                          : person.accountExists
+                            ? "Created"
+                            : "Not accepted"}
                       </td>
                       <td data-label="Review">
                         {person.accountExists ? (
@@ -283,7 +350,7 @@ export function BetaWorkspace() {
                         ) : (
                           <button
                             className="button button-primary beta-approve"
-                            disabled={Boolean(sending) || loading}
+                            disabled={busy}
                             onClick={() => void approve(person)}
                             aria-label={`${person.status === "awaiting_review" ? "Approve and invite" : "Send invitation to"} ${person.email}`}
                           >
@@ -304,6 +371,34 @@ export function BetaWorkspace() {
                           </button>
                         )}
                       </td>
+                      <td data-label="Removal">
+                        <button
+                          className={`button ${person.accountExists ? "button-danger" : "button-secondary"} beta-remove`}
+                          disabled={busy}
+                          onClick={() => {
+                            if (person.accountExists) setClosingPerson(person);
+                            else void remove(person);
+                          }}
+                          aria-label={
+                            person.accountExists
+                              ? `Close account for ${person.email}`
+                              : `Remove ${person.email} from beta list`
+                          }
+                        >
+                          {removing === person.email ? (
+                            <Loader2 size={14} className="spin" />
+                          ) : (
+                            <Trash2 size={14} />
+                          )}
+                          {removing === person.email
+                            ? "Removing…"
+                            : person.accountClosing
+                              ? "Retry account closure"
+                              : person.accountExists
+                                ? "Close account"
+                                : "Remove from beta list"}
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -311,6 +406,36 @@ export function BetaWorkspace() {
             </div>
           )}
         </div>
+      )}
+      {closingPerson && (
+        <Modal
+          title="Close this account?"
+          onClose={() => {
+            if (!removing) setClosingPerson(null);
+          }}
+        >
+          <p>
+            Close the account for <strong>{closingPerson.email}</strong>? Their
+            computer, phone identity, workspace, and beta entry will be removed.
+            This cannot be undone.
+          </p>
+          <div className="modal-actions">
+            <button
+              className="button button-secondary"
+              disabled={Boolean(removing)}
+              onClick={() => setClosingPerson(null)}
+            >
+              Keep account
+            </button>
+            <button
+              className="button button-danger"
+              disabled={Boolean(removing)}
+              onClick={() => void remove(closingPerson)}
+            >
+              {removing ? "Closing account…" : "Close account and remove"}
+            </button>
+          </div>
+        </Modal>
       )}
       {message && (
         <div

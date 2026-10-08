@@ -33,11 +33,11 @@ export function FileDownloadLink(
                     const blob = URL.createObjectURL(await response.blob()),
                       link = document.createElement("a");
                     link.href = blob;
+                    const params = new URL(path, window.location.origin)
+                      .searchParams;
                     link.download =
-                      new URL(path, window.location.origin).searchParams
-                        .get("path")
-                        ?.split("/")
-                        .pop() || "download";
+                      (params.get("path")?.split("/").pop() || "download") +
+                      (params.get("archive") === "1" ? ".tar.gz" : "");
                     link.click();
                     setTimeout(() => URL.revokeObjectURL(blob), 1000);
                   })

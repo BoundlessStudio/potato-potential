@@ -13,6 +13,7 @@ import {
 } from "@boundless/shared";
 import type { Dependencies } from "./app";
 import { HttpError } from "./security";
+import { browserPath, registerBrowserRoutes } from "./file-browser";
 import {
   FILE_TRANSFER_VERSION,
   filePath,
@@ -22,6 +23,7 @@ import {
 } from "./file-transfer";
 
 const input = z.object({
+  purpose: z.enum(["chat", "files"]).default("chat"),
   id: z.uuid(),
   name: z
     .string()
@@ -86,6 +88,7 @@ export function registerFileRoutes(
   ready: (req: Request) => Promise<Agent & { instanceId: string }>,
 ) {
   const { repo, a37 } = dep;
+  registerBrowserRoutes(app, dep, owner, ready);
   app.get("/api/files/directories", async (req, res) => {
     const agent = await ready(req);
     const instance = z
@@ -161,6 +164,7 @@ export function registerFileRoutes(
             upload.name !== body.name ||
             upload.size !== body.size ||
             upload.sha256 !== body.sha256 ||
+            (upload.purpose || "chat") !== body.purpose ||
             upload.directory !== directory
           )
             throw new HttpError(
@@ -377,8 +381,14 @@ export function registerFileRoutes(
         "This file is not on your current computer. The computer may have been replaced.",
       );
     const path = filePath(z.string().parse(req.query.path));
-    const file = await a37.statFile(agent.instanceId, path);
-    const upstream = await a37.downloadFile(agent.instanceId, path);
+    const archive = z.literal("1").optional().parse(req.query.archive);
+    if (archive) await a37.listFiles(agent.instanceId, browserPath(path));
+    const file = archive
+      ? { name: posix.basename(path) + ".tar.gz" }
+      : await a37.statFile(agent.instanceId, path);
+    const upstream = archive
+      ? await a37.archiveFolder(agent.instanceId, path)
+      : await a37.downloadFile(agent.instanceId, path);
     if (!upstream.body)
       throw new HttpError(
         502,

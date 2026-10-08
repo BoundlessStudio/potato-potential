@@ -48,9 +48,187 @@ async function finish() {
   return (await repo.agent(profile.id))!;
 }
 describe("durable lifecycle", () => {
-  it("deletes an invited account that has not provisioned provider resources", async () => {
+  it.each([
+    "profile_only",
+    "identity",
+    "computer",
+    "awaiting_phone",
+    "persona",
+    "plugin",
+    "ready",
+  ] as const)(
+    "closes an incomplete account at the %s stage without leaving resources or touching another owner",
+    async (stage) => {
+      const otherOwner = randomUUID();
+      const otherComputer = await a37.createInstance({
+        user: otherOwner,
+        template: "preview",
+      });
+      await inkbox.request("/identities", {
+        method: "POST",
+        body: JSON.stringify({ agent_handle: "other-owner" }),
+      });
+      await repo.addBetaRequest(profile.email);
+      await repo.addBetaRequest("other@example.com");
+      if (stage === "identity" || stage === "computer") {
+        await lifecycle.provision(profile.id, true);
+        if (stage === "computer") await lifecycle.provision(profile.id, true);
+      } else if (stage !== "profile_only") {
+        await lifecycle.provision(profile.id);
+        if (stage !== "awaiting_phone") {
+          await lifecycle.verifyPhone(profile.id);
+          for (
+            let attempt = 0;
+            attempt < 6 &&
+            !(await repo.agent(profile.id))?.completed.includes(stage);
+            attempt++
+          )
+            await lifecycle.provision(profile.id, true);
+          expect((await repo.agent(profile.id))!.completed).toContain(stage);
+        }
+      }
+      await lifecycle.requestCleanup(profile.id);
+      await lifecycle.cleanup(profile.id);
+      expect(await repo.profile(profile.id)).toBeNull();
+      expect(await repo.agent(profile.id)).toBeNull();
+      expect([...a37.instances.keys()]).toEqual([otherComputer.id]);
+      expect([...inkbox.identities.keys()]).toEqual(["other-owner"]);
+      expect(await repo.betaRequests()).toEqual([
+        expect.objectContaining({ email: "other@example.com" }),
+      ]);
+    },
+  );
+  it("recovers an identity created remotely before its reply was lost, then closes it by the saved handle", async () => {
+    const request = inkbox.request.bind(inkbox);
+    vi.spyOn(inkbox, "request").mockImplementation(async (path, init) => {
+      const result = await request(path, init);
+      if (path === "/identities" && init?.method === "POST")
+        throw new Error("Lost identity creation reply");
+      return result;
+    });
+    await expect(lifecycle.provision(profile.id)).rejects.toThrow(
+      "Lost identity creation reply",
+    );
+    expect((await repo.agent(profile.id))!.identityId).toBeUndefined();
+    expect(inkbox.identities.size).toBe(1);
+    await lifecycle.cleanup(profile.id);
+    expect(inkbox.identities.size).toBe(0);
+    expect(await repo.profile(profile.id)).toBeNull();
+  });
+  it("keeps deletion incomplete if the provider acknowledges a delete but still lists the computer", async () => {
+    await finish();
+    vi.spyOn(a37, "removeInstance").mockResolvedValueOnce();
+    const erase = vi.spyOn(repo, "removeCustomer");
+    await expect(lifecycle.cleanup(profile.id)).rejects.toMatchObject({
+      code: "instance_deletion_unconfirmed",
+    });
+    expect(erase).not.toHaveBeenCalled();
+    expect((await repo.agent(profile.id))!.deletion?.instance).toBe(false);
+    expect(await repo.profile(profile.id)).not.toBeNull();
     await lifecycle.cleanup(profile.id);
     expect(await repo.profile(profile.id)).toBeNull();
+  });
+  it("retains account ownership when a second owned computer exists despite a saved primary id", async () => {
+    const agent = await finish();
+    await repo.addBetaRequest(profile.email);
+    const extra = await a37.createInstance({
+      user: profile.id,
+      template: "preview",
+    });
+    const remove = vi.spyOn(a37, "removeInstance");
+    await expect(lifecycle.cleanup(profile.id)).rejects.toMatchObject({
+      code: "instance_ownership_conflict",
+    });
+    expect(remove).not.toHaveBeenCalled();
+    expect(await repo.profile(profile.id)).not.toBeNull();
+    expect(await repo.agent(profile.id)).toMatchObject({
+      status: "deleting",
+      deletion: { instance: false, identity: false },
+    });
+    expect(await repo.betaRequests()).toHaveLength(1);
+    expect(a37.instances.has(agent.instanceId!)).toBe(true);
+    expect(a37.instances.has(extra.id)).toBe(true);
+    expect((await repo.agent(profile.id))!.error).toContain("administrator");
+    await a37.removeInstance(extra.id);
+    await lifecycle.cleanup(profile.id);
+    expect(await repo.profile(profile.id)).toBeNull();
+    expect(a37.instances.size).toBe(0);
+    expect(inkbox.identities.size).toBe(0);
+    expect(await repo.betaRequests()).toEqual([]);
+  });
+  it("refuses arbitrary adoption after a lost create reply leaves two owned computers and resumes after ownership is resolved", async () => {
+    const create = a37.createInstance.bind(a37);
+    vi.spyOn(a37, "createInstance").mockImplementationOnce(async (body) => {
+      await create(body);
+      throw new Error("Lost create reply");
+    });
+    await expect(lifecycle.provision(profile.id)).rejects.toThrow(
+      "Lost create reply",
+    );
+    const partial = (await repo.agent(profile.id))!;
+    const extra = await create({
+      user: profile.id,
+      template: "preview",
+      metadata: { boundless_callback_token_sha256: partial.callbackHash },
+    });
+    await expect(lifecycle.provision(profile.id)).rejects.toMatchObject({
+      code: "instance_ownership_conflict",
+    });
+    expect((await repo.agent(profile.id))!.instanceId).toBeUndefined();
+    expect(await repo.profile(profile.id)).not.toBeNull();
+    await a37.removeInstance(extra.id);
+    await lifecycle.provision(profile.id);
+    expect((await repo.agent(profile.id))!.status).toBe("awaiting_phone");
+    expect(a37.instances.size).toBe(1);
+  });
+  it("keeps an unconfirmed phone retryable and makes successful confirmation idempotent", async () => {
+    await lifecycle.provision(profile.id);
+    const before = (await repo.agent(profile.id))!;
+    const confirmation = vi
+      .spyOn(inkbox, "findConfirmation")
+      .mockResolvedValueOnce(false);
+    await expect(lifecycle.verifyPhone(profile.id)).rejects.toMatchObject({
+      code: "phone_not_verified",
+    });
+    expect(await repo.agent(profile.id)).toMatchObject({
+      status: "awaiting_phone",
+      phoneChallengeBox: before.phoneChallengeBox,
+    });
+    await Promise.all([
+      lifecycle.verifyPhone(profile.id),
+      lifecycle.verifyPhone(profile.id),
+    ]);
+    const confirmed = (await repo.agent(profile.id))!;
+    expect(confirmed.status).toBe("provisioning");
+    expect(confirmed.phoneVerifiedAt).toBeTruthy();
+    expect(confirmed.phoneChallengeBox).toBeUndefined();
+    expect(confirmation).toHaveBeenCalledTimes(2);
+    await lifecycle.provision(profile.id);
+    await expect(lifecycle.verifyPhone(profile.id)).resolves.toBeUndefined();
+    expect((await repo.agent(profile.id))!.status).toBe("ready");
+    expect((await repo.agent(profile.id))!.phoneVerifiedAt).toBe(
+      confirmed.phoneVerifiedAt,
+    );
+    expect(confirmation).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects confirmation retries after account deletion begins", async () => {
+    await finish();
+    await lifecycle.requestCleanup(profile.id);
+    await expect(lifecycle.verifyPhone(profile.id)).rejects.toMatchObject({
+      code: "not_ready",
+    });
+    expect((await repo.agent(profile.id))!.status).toBe("deleting");
+  });
+
+  it("deletes an invited account that has not provisioned provider resources", async () => {
+    await repo.addBetaRequest(profile.email);
+    await repo.addBetaRequest("other@example.com");
+    await lifecycle.cleanup(profile.id);
+    expect(await repo.profile(profile.id)).toBeNull();
+    expect(await repo.betaRequests()).toEqual([
+      expect.objectContaining({ email: "other@example.com" }),
+    ]);
     expect(a37.instances.size).toBe(0);
     expect(inkbox.identities.size).toBe(0);
   });
@@ -145,6 +323,8 @@ describe("durable lifecycle", () => {
   });
   it("preserves the identity and account when computer deletion fails", async () => {
     await finish();
+    await repo.addBetaRequest(profile.email);
+    const requests = await repo.betaRequests();
     vi.spyOn(a37, "removeInstance").mockRejectedValueOnce(
       new HttpError(503, "unavailable", "Computer unavailable"),
     );
@@ -156,8 +336,10 @@ describe("durable lifecycle", () => {
     expect((await repo.agent(profile.id))!.status).toBe("deleting");
     expect(a37.instances.size).toBe(1);
     expect(inkbox.identities.size).toBe(1);
+    expect(await repo.betaRequests()).toEqual(requests);
     await lifecycle.cleanup(profile.id);
     expect(await repo.profile(profile.id)).toBeNull();
+    expect(await repo.betaRequests()).toEqual([]);
   });
   it("recovers the one owned computer after a lost create reply and leaves other owners alone", async () => {
     const create = a37.createInstance.bind(a37);
@@ -259,7 +441,7 @@ describe("durable lifecycle", () => {
       agent: "hermes",
       prompt: "Check in",
     });
-    cron.last_run = 1;
+    cron.last_run = Date.parse("2026-10-06T13:00:00Z") / 1000;
     vi.spyOn(a37, "cronRuns").mockResolvedValue([
       {
         cronId: cron.id,
@@ -292,7 +474,7 @@ describe("durable lifecycle", () => {
       agent: "hermes",
       prompt: "Check in",
     });
-    cron.last_run = 1;
+    cron.last_run = Date.parse("2026-10-06T13:00:00Z") / 1000;
     const run = {
       cronId: cron.id,
       name: cron.name,

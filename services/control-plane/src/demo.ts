@@ -3,12 +3,15 @@ import type { AgentProvider, InkboxProvider } from "./providers";
 import type {
   Connection,
   ComputerMetrics,
+  ComputerBackup,
   Cron,
   CronRun,
   Session,
   Toolkit,
   FileEntry,
   DirectoryListing,
+  FileListing,
+  BrowserEntry,
   FileUpload,
   InstanceBudget,
   InstanceUsage,
@@ -19,12 +22,65 @@ import { screenForTemplate } from "./computer-maintenance";
 import { visibleMessage } from "@boundless/shared";
 import { uploadDirectory } from "./file-transfer";
 import { posix } from "node:path";
+import { browserPath } from "./file-browser";
+import { gzipSync } from "node:zlib";
 
 export const DEMO_USER = "11111111-1111-4111-8111-111111111111";
 export const DEMO_NEW_USER = "22222222-2222-4222-8222-222222222222";
 export const DEMO_EMAIL = "alex@example.com";
 const hex = () => randomBytes(16).toString("hex");
 export class DemoAgent37 implements AgentProvider {
+  backupRows = new Map<string, ComputerBackup[]>();
+  private backupFiles = new Map<
+    string,
+    {
+      files: [string, { content: string; modified: number }][];
+      binary: [string, Uint8Array][];
+    }
+  >();
+  async backups(id: string) {
+    await this.instance(id);
+    return structuredClone(this.backupRows.get(id) || []);
+  }
+  async backup(id: string) {
+    await this.instance(id);
+    const row: ComputerBackup = {
+      id: randomBytes(10).toString("hex"),
+      kind: "manual",
+      created: Math.floor(Date.now() / 1000),
+      size_bytes: 412337102,
+    };
+    this.backupRows.set(id, [
+      row,
+      ...(this.backupRows.get(id) || []).filter((row) => row.kind !== "manual"),
+    ]);
+    this.backupFiles.set(
+      row.id,
+      structuredClone({
+        files: [...this.files].filter(([key]) => key.startsWith(`${id}:`)),
+        binary: [...this.binaryFiles].filter(([key]) =>
+          key.startsWith(`${id}:`),
+        ),
+      }),
+    );
+    return row;
+  }
+  async restore(id: string, backup: string) {
+    if (!(await this.backups(id)).some((row) => row.id === backup))
+      throw new ProviderError(404, "not_found", "Checkpoint not found.");
+    const snapshot = this.backupFiles.get(backup);
+    if (snapshot) {
+      for (const key of this.files.keys())
+        if (key.startsWith(`${id}:`)) this.files.delete(key);
+      for (const key of this.binaryFiles.keys())
+        if (key.startsWith(`${id}:`)) this.binaryFiles.delete(key);
+      for (const [key, value] of snapshot.files)
+        this.files.set(key, structuredClone(value));
+      for (const [key, value] of snapshot.binary)
+        this.binaryFiles.set(key, new Uint8Array(value));
+    }
+    await this.restart(id);
+  }
   async stop(id: string) {
     this.instances.get(id)!.status = "stopped";
   }
@@ -37,17 +93,23 @@ export class DemoAgent37 implements AgentProvider {
   responseSessions = new Map<string, string>();
   files = new Map<string, { content: string; modified: number }>();
   binaryFiles = new Map<string, Uint8Array>();
+  binaryModified = new Map<string, number>();
+  folders = new Map<string, Set<string>>();
   async listDirectories(id: string, path: string): Promise<DirectoryListing> {
     path = uploadDirectory(path);
-    const directories = new Set([
-      "/home/node",
-      "/home/node/uploads",
-      "/home/node/outputs",
-      "/home/node/work",
-      "/home/node/work/客户",
-      "/home/node/.hermes",
-      "/home/linuxbrew",
-    ]);
+    const directories =
+      this.folders.get(id) ||
+      new Set([
+        "/home/node",
+        "/home/node/uploads",
+        "/home/node/outputs",
+        "/home/node/work",
+        "/home/node/work/客户",
+        "/home/node/.hermes",
+        "/home/node/.hermes/memories",
+        "/home/linuxbrew",
+      ]);
+    this.folders.set(id, directories);
     for (const key of this.binaryFiles.keys()) {
       if (!key.startsWith(`${id}:`)) continue;
       let parent = posix.dirname(key.slice(id.length + 1));
@@ -78,11 +140,164 @@ export class DemoAgent37 implements AgentProvider {
       truncated: false,
     };
   }
+  async listFiles(id: string, path: string): Promise<FileListing> {
+    const listing = await this.listDirectories(id, browserPath(path));
+    path = listing.path;
+    const entries: BrowserEntry[] = listing.directories.map((entry) => ({
+      ...entry,
+      type: "directory",
+      size: null,
+      modified: 0,
+    }));
+    for (const [key, bytes] of this.binaryFiles) {
+      if (!key.startsWith(id + ":")) continue;
+      const filePath = key.slice(id.length + 1);
+      if (posix.dirname(filePath) === path)
+        entries.push(await this.statFile(id, filePath));
+    }
+    for (const [key, file] of this.files) {
+      const filePath = key.replace(/^~(?=\/|$)/, "/home/node");
+      if (posix.dirname(filePath) === path)
+        entries.push({
+          name: posix.basename(filePath),
+          path: filePath,
+          type: "file",
+          size: Buffer.byteLength(file.content),
+          modified: file.modified,
+          hidden: posix.basename(filePath).startsWith("."),
+        });
+    }
+    return {
+      path,
+      parentPath: listing.parentPath,
+      entries: entries.sort(
+        (a, b) =>
+          Number(b.type === "directory") - Number(a.type === "directory") ||
+          a.name.localeCompare(b.name),
+      ),
+      truncated: false,
+    };
+  }
+  async manageFile(
+    id: string,
+    action: "create" | "rename" | "delete",
+    path: string,
+    to?: string,
+    modified?: number,
+  ) {
+    path = browserPath(path, true);
+    if (to) to = browserPath(to, true);
+    await this.listDirectories(id, "/home/node");
+    const folders = this.folders.get(id)!;
+    if (action === "create") {
+      if (this.binaryFiles.has(id + ":" + path))
+        throw new ProviderError(
+          409,
+          "file_exists",
+          "An item already uses that name.",
+        );
+      let current = path;
+      while (current !== "/home" && current !== "/") {
+        folders.add(current);
+        current = posix.dirname(current);
+      }
+      return;
+    }
+    const listing = await this.listFiles(id, posix.dirname(path));
+    const entry = listing.entries.find((entry) => entry.path === path);
+    if (!entry)
+      throw new ProviderError(404, "not_found", "This item no longer exists.");
+    if (modified !== undefined && modified !== entry.modified)
+      throw new ProviderError(
+        412,
+        "modified",
+        "This item changed. Refresh before trying again.",
+      );
+    if (
+      action === "rename" &&
+      listing.entries.some((entry) => entry.path === to)
+    )
+      throw new ProviderError(
+        409,
+        "file_exists",
+        "An item already uses that name.",
+      );
+    for (const key of [...this.binaryFiles.keys()]) {
+      const p = key.slice(id.length + 1);
+      if (
+        !key.startsWith(id + ":") ||
+        !(p === path || p.startsWith(path + "/"))
+      )
+        continue;
+      if (action === "rename") {
+        this.binaryFiles.set(
+          id + ":" + to + p.slice(path.length),
+          this.binaryFiles.get(key)!,
+        );
+        this.binaryModified.set(
+          id + ":" + to + p.slice(path.length),
+          this.binaryModified.get(key) || 0,
+        );
+      }
+      this.binaryFiles.delete(key);
+      this.binaryModified.delete(key);
+    }
+    for (const p of [...folders])
+      if (p === path || p.startsWith(path + "/")) {
+        folders.delete(p);
+        if (action === "rename") folders.add(to! + p.slice(path.length));
+      }
+    for (const key of [...this.files.keys()]) {
+      const p = key.replace(/^~(?=\/|$)/, "/home/node");
+      if (p === path || p.startsWith(path + "/")) {
+        if (action === "rename")
+          this.files.set(
+            (to! + p.slice(path.length)).replace(/^\/home\/node/, "~"),
+            this.files.get(key)!,
+          );
+        this.files.delete(key);
+      }
+    }
+  }
+  async archiveFolder(id: string, path: string) {
+    path = browserPath(path);
+    await this.listDirectories(id, path);
+    const blocks: Buffer[] = [];
+    for (const [key, bytes] of this.binaryFiles) {
+      if (!key.startsWith(id + ":" + path + "/")) continue;
+      const name = posix.basename(path) + key.slice((id + ":" + path).length),
+        header = Buffer.alloc(512);
+      header.write(name, 0, 100);
+      header.write("0000644\0", 100);
+      header.write("0000000\0", 108);
+      header.write("0000000\0", 116);
+      header.write(bytes.length.toString(8).padStart(11, "0") + "\0", 124);
+      header.write("00000000000\0", 136);
+      header.fill(32, 148, 156);
+      header[156] = 48;
+      header.write("ustar\0", 257);
+      header.write("00", 263);
+      const sum = header.reduce((sum, value) => sum + value, 0);
+      header.write(sum.toString(8).padStart(6, "0") + "\0 ", 148);
+      blocks.push(
+        header,
+        Buffer.from(bytes),
+        Buffer.alloc((512 - (bytes.length % 512)) % 512),
+      );
+    }
+    blocks.push(Buffer.alloc(1024));
+    return new Response(new Uint8Array(gzipSync(Buffer.concat(blocks))), {
+      headers: { "Content-Type": "application/gzip" },
+    });
+  }
   responseRequests: { instanceId: string; body: Record<string, unknown> }[] =
     [];
   async statFile(id: string, path: string): Promise<FileEntry> {
     path = path.replace(/^~(?=\/|$)/, "/home/node");
-    const bytes = this.binaryFiles.get(`${id}:${path}`);
+    const stored = this.files.get(path.replace(/^\/home\/node/, "~"));
+    const bytes =
+      this.binaryFiles.get(`${id}:${path}`) ||
+      (stored ? Buffer.from(stored.content) : undefined);
     if (!bytes)
       throw new ProviderError(
         404,
@@ -94,18 +309,25 @@ export class DemoAgent37 implements AgentProvider {
       path,
       size: bytes.length,
       type: "file",
-      modified: Date.now(),
-      hidden: false,
+      modified:
+        stored?.modified || this.binaryModified.get(`${id}:${path}`) || 0,
+      hidden: posix.basename(path).startsWith("."),
     };
   }
   async writeBinary(id: string, path: string, bytes: Uint8Array) {
     this.binaryFiles.set(`${id}:${path}`, new Uint8Array(bytes));
+    this.binaryModified.set(`${id}:${path}`, Date.now());
     return this.statFile(id, path);
   }
   async downloadFile(id: string, path: string) {
     const file = await this.statFile(id, path);
     return new Response(
-      new Uint8Array(this.binaryFiles.get(`${id}:${file.path}`)!),
+      new Uint8Array(
+        this.binaryFiles.get(`${id}:${file.path}`) ||
+          Buffer.from(
+            this.files.get(file.path.replace(/^\/home\/node/, "~"))!.content,
+          ),
+      ),
     );
   }
   schedules = new Map<string, Cron[]>();
@@ -138,6 +360,13 @@ export class DemoAgent37 implements AgentProvider {
       public_ports: [{ port: 8765, url: `https://${id}-8765.example.test` }],
     };
     this.instances.set(id, row);
+    await this.writeBinary(
+      id,
+      "/home/node/outputs/weekly-plan.md",
+      Buffer.from(
+        "# A little room for the week\n\n- Protect a quiet morning\n- Make progress on one important thing\n",
+      ),
+    );
     const cap =
       (body.budget as { monthly_cap_micros?: number } | undefined)
         ?.monthly_cap_micros || 0;
@@ -431,7 +660,13 @@ export class DemoAgent37 implements AgentProvider {
   async sessions() {
     return [...this.histories.values()].map((session) => ({
       id: session.id,
-      name: "You & Pip",
+      title:
+        visibleMessage(
+          session.history.find((message) => message.role === "user")?.content ||
+            "",
+        )
+          ?.replace(/\s+/g, " ")
+          .slice(0, 80) || "You & Pip",
       preview: session.history[0]?.content || "",
     }));
   }
@@ -456,6 +691,14 @@ export class DemoAgent37 implements AgentProvider {
     const cron = (await this.crons(id)).find((row) => row.id === cronId);
     if (!cron) throw new ProviderError(404, "not_found", "Routine not found.");
     Object.assign(cron, body);
+    if (
+      ["schedule", "timezone", "enabled"].some((key) =>
+        Object.hasOwn(body, key),
+      )
+    )
+      cron.next_run = cron.enabled
+        ? Math.floor(Date.now() / 1000) + 3600
+        : null;
     return cron;
   }
   async removeCron(id: string, cronId: string) {

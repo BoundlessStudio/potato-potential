@@ -52,13 +52,17 @@ export function useChatUploads(
   instance?: string,
   enabled = false,
   onError: (message: string) => void = () => {},
+  scope: "chat" | "files" = "chat",
 ) {
   const [items, setItems] = useState<Attachment[]>([]);
   const [directory, setDirectory] = useState(DEFAULT_UPLOAD_DIRECTORY);
   const entries = useRef<Attachment[]>([]),
     originals = useRef(new Map<string, File>()),
     controllers = useRef(new Map<string, AbortController>());
-  const key = owner && instance ? `boundless-uploads:${owner}:${instance}` : "";
+  const key =
+    owner && instance
+      ? `boundless-uploads:${owner}:${instance}${scope === "chat" ? "" : `:${scope}`}`
+      : "";
   const storageKey = useRef("");
   const transferQueue = useRef(Promise.resolve());
   const cancelled = useRef(new Set<string>()),
@@ -149,6 +153,7 @@ export function useChatUploads(
           ...uploads
             .filter(
               (upload) =>
+                (upload.purpose || "chat") === scope &&
                 !dismissed.current.has(upload.id) &&
                 !rows.some((row) => row.id === upload.id),
             )
@@ -214,6 +219,7 @@ export function useChatUploads(
           signal: controller.signal,
           body: JSON.stringify({
             id,
+            purpose: scope,
             name: file.name,
             size: file.size,
             directory: row.directory,
@@ -275,7 +281,7 @@ export function useChatUploads(
         controllers.current.delete(id);
     }
   }
-  function add(files: File[]) {
+  function add(files: File[], destination = directory) {
     if (!enabled) return;
     for (const file of files) {
       if (entries.current.length >= 100) {
@@ -289,7 +295,7 @@ export function useChatUploads(
           id,
           name: file.name,
           size: file.size,
-          directory,
+          directory: destination,
           status: "uploading",
           progress: 0,
         },

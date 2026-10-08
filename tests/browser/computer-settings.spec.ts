@@ -28,6 +28,35 @@ test("customers confirm updates and can recover progress after leaving Computer"
   );
   await page.goto("/");
   await page.getByRole("link", { name: "Computer", exact: true }).click();
+  const banner = page.locator("header:has(h1)");
+  await expect(
+    banner.getByRole("button", { name: "Restart computer", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    banner.getByRole("button", { name: "Update computer", exact: true }),
+  ).toBeEnabled();
+  await expect(page.locator(".computer-settings button")).toHaveCount(1);
+  await expect(
+    banner.getByRole("button", { name: "Refresh computer", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.locator(".computer-settings").getByRole("button", { name: "Refresh computer", exact: true }),
+  ).toHaveText("");
+  await banner.screenshot({
+    path: ".cache/computer-maintenance-banner-desktop.png",
+  });
+  await expect(
+    page.locator(".computer-version").getByRole("img", {
+      name: "Update available: boundless-hermes-desktop@4",
+      exact: true,
+    }),
+  ).toHaveAttribute("title", "Update available: boundless-hermes-desktop@4");
+  await expect(
+    page.getByText("A tested update is ready:", { exact: false }),
+  ).toHaveCount(0);
+  await page
+    .locator(".computer-settings")
+    .screenshot({ path: ".cache/computer-version-update-available.png" });
   await expect(
     page.getByRole("button", { name: "Update computer", exact: true }),
   ).toBeEnabled();
@@ -40,6 +69,18 @@ test("customers confirm updates and can recover progress after leaving Computer"
   await expect(page.getByText(/Open browser forms and work/)).toBeVisible();
   await page.getByRole("button", { name: "Keep working", exact: true }).click();
   expect(actions).toEqual([]);
+  await page
+    .getByRole("button", { name: "Resource usage", exact: true })
+    .click();
+  await banner
+    .getByRole("button", { name: "Update computer", exact: true })
+    .click();
+  await expect(
+    page.getByRole("dialog", { name: "Update this computer?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Keep working", exact: true }).click();
+  expect(actions).toEqual([]);
+  await page.getByRole("button", { name: "Overview", exact: true }).click();
   await page
     .getByRole("button", { name: "Update computer", exact: true })
     .click();
@@ -67,14 +108,26 @@ test("customers confirm updates and can recover progress after leaving Computer"
     operation: { action: "update", phase: "completed" },
   };
   await page
-    .getByRole("button", { name: "Check computer status", exact: true })
+    .getByRole("button", { name: "Refresh computer", exact: true })
     .click();
   await expect(
     page.getByText("540 × 1140 · Portrait", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText("Update complete. The computer is ready."),
-  ).toBeVisible();
+  ).toHaveCount(0);
+  await expect(
+    page
+      .locator(".computer-version")
+      .getByRole("img", { name: "Up to date", exact: true }),
+  ).toHaveAttribute("title", "Up to date");
+  await expect(
+    page.getByText("Your computer has the current update."),
+  ).toHaveCount(0);
+  await expect(page.locator(".computer-operation")).toHaveCount(0);
+  await page
+    .locator(".computer-settings")
+    .screenshot({ path: ".cache/computer-version-current.png" });
   await expect(
     page.getByRole("button", { name: "Update computer", exact: true }),
   ).toBeDisabled();
@@ -94,7 +147,7 @@ test("customers confirm updates and can recover progress after leaving Computer"
       "Couldn’t confirm the computer is ready. Check its status and retry.",
   };
   await page
-    .getByRole("button", { name: "Check computer status", exact: true })
+    .getByRole("button", { name: "Refresh computer", exact: true })
     .click();
   await expect(page.getByText(status.operation.error)).toBeVisible();
   await expect(
@@ -109,6 +162,21 @@ test("customers confirm updates and can recover progress after leaving Computer"
   await page
     .locator(".computer-settings")
     .screenshot({ path: ".cache/computer-settings-mobile.png" });
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect(
+    banner.getByRole("button", { name: "Restart computer", exact: true }),
+  ).toBeVisible();
+  await expect(
+    banner.getByRole("button", { name: "Update computer", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await banner.screenshot({
+    path: ".cache/computer-maintenance-banner-mobile.png",
+  });
   expect(errors).toEqual([]);
 });
 

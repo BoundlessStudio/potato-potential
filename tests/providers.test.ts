@@ -4,6 +4,104 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+it("forwards complete cron patches and preserves explicit resets and omitted keys", async () => {
+  const fetch = vi
+    .fn()
+    .mockImplementation(async () => Response.json({ id: "123456789abc" }));
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Agent37("admin");
+  const complete = {
+    name: "Evening",
+    prompt: "Review the day",
+    schedule: "0 17 * * MON-FRI",
+    timezone: "America/Toronto",
+    enabled: true,
+    agent: "hermes",
+    profile: "work",
+  };
+  await provider.patchCron("abcdefghij", "123456789abc", complete);
+  await provider.patchCron("abcdefghij", "123456789abc", {
+    name: "New name",
+    agent: null,
+    profile: null,
+  });
+  for (const [url, init] of fetch.mock.calls) {
+    expect(url).toBe(
+      "https://api.agent37.com/v1/instances/abcdefghij/crons/123456789abc",
+    );
+    expect(init.method).toBe("PATCH");
+  }
+  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(complete);
+  expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+    name: "New name",
+    agent: null,
+    profile: null,
+  });
+});
+it("uses Agent37's backup slot and restores only the specified checkpoint", async () => {
+  const row = {
+    id: "0123456789abcdefabcd",
+    kind: "manual",
+    created: 1791490000,
+    size_bytes: 1024,
+  };
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({ data: [{ ...row, private: "hidden" }] }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ ...row, private: "hidden" }, { status: 201 }),
+    )
+    .mockResolvedValueOnce(
+      Response.json({ id: "abcdefghij", status: "running" }),
+    );
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Agent37("admin");
+  expect(await provider.backups("abcdefghij")).toEqual([row]);
+  expect(await provider.backup("abcdefghij")).toEqual(row);
+  await provider.restore("abcdefghij", row.id);
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+    "https://api.agent37.com/v1/instances/abcdefghij/backups",
+    "https://api.agent37.com/v1/instances/abcdefghij/backups",
+    "https://api.agent37.com/v1/instances/abcdefghij/restore",
+  ]);
+  expect(fetch.mock.calls[1][1].method).toBe("POST");
+  expect(fetch.mock.calls[1][1].body).toBeUndefined();
+  expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ backup: row.id });
+  expect(fetch.mock.calls[2][1].headers.Authorization).toBe("Bearer admin");
+});
+it.each([
+  {},
+  { data: [{ id: "../escape", kind: "manual", created: 1, size_bytes: 1 }] },
+  { data: [{ id: "abc", kind: "unknown", created: 1, size_bytes: 1 }] },
+  { data: [{ id: "abc", kind: "automatic", created: -1, size_bytes: 1 }] },
+])("reports malformed checkpoint data as an upstream failure", async (body) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  await expect(
+    new Agent37("admin").backups("abcdefghij"),
+  ).rejects.toMatchObject({ status: 502, code: "invalid_backups" });
+});
+it("bounds long backup requests while leaving uncertain completion to reconciliation", async () => {
+  vi.useFakeTimers();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init.signal.addEventListener(
+            "abort",
+            () => reject(new Error("timeout")),
+            { once: true },
+          );
+        }),
+    ),
+  );
+  const promise = new Agent37("admin").backup("abcdefghij");
+  const rejected = expect(promise).rejects.toThrow("timeout");
+  await vi.advanceTimersByTimeAsync(60_000);
+  await rejected;
+});
 it("validates and normalizes managed usage without forwarding unknown provider fields", async () => {
   const fetch = vi.fn().mockResolvedValue(
     Response.json({

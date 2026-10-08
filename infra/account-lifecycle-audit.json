@@ -1,0 +1,137 @@
+{
+  "date": "2026-10-07",
+  "scope": "Invitation approval, first and returning sign-in, incomplete setup, account closure, beta removal, persistent jobs, and provider resource ownership.",
+  "status": "fixed_and_deployed",
+  "findings": [
+    {
+      "id": "setup-job-gap",
+      "problem": "An interruption after saving a new companion but before creating its first background job left setup spinning indefinitely.",
+      "fix": "Account polling and scheduled maintenance enqueue missing setup work. The durable outbox deduplicates existing work. New setup also offers Continue setup.",
+      "regression": "tests/operator-onboarding.test.ts: recovers setup if the request died after saving the new agent but before queueing its first job"
+    },
+    {
+      "id": "recovery-batch-abort",
+      "problem": "The first failed workflow dispatch aborted repair and prevented later accounts from getting recovery work.",
+      "fix": "Repair and maintenance attempt every independent account, then report the failure. Saved deletion intent and setup work remain retryable.",
+      "regression": "tests/jobs.test.ts: continues repairing other accounts when the first workflow dispatch fails; recovers unqueued setup and cleanup even when repair or another account fails"
+    },
+    {
+      "id": "acceptance-removal-race",
+      "problem": "Beta removal could observe an Auth-only account, wait behind invitation acceptance, then erase the newly accepted account without the required close-account confirmation.",
+      "fix": "Cleanup rechecks enrollment while holding the owner's lease. A newly enrolled account returns account_exists and retains its profile, invitation and beta entry.",
+      "regression": "tests/operator-onboarding.test.ts: does not erase an account that accepts its invitation while removal waits for the owner lease"
+    },
+    {
+      "id": "historical-email-ownership",
+      "problem": "Closing an account after an email change could erase another owner's beta access at its former address. Unused invitations at an unshared historical address could also survive closure.",
+      "fix": "The Auth deletion transaction protects addresses associated with other current owners, removes only the closing owner's consumed invitations, and revokes unshared historical approvals and unused invitations.",
+      "migration": "supabase/migrations/20261007151028_account_email_ownership.sql",
+      "regression": "tests/database.test.ts: retains the new owner's beta access when closing an account whose former email has been reused; revokes unused invitations for an unshared historical email when closing its former owner"
+    },
+    {
+      "id": "ambiguous-auth-owner",
+      "problem": "An email-to-account map discarded duplicate matches, permitting arbitrary account selection. Sign-in also stopped at the first matching Auth page.",
+      "fix": "Preserve every matching owner and refuse ambiguous removal, approval and sign-in. Tests cover matches across Auth pagination boundaries.",
+      "regression": "tests/operator-onboarding.test.ts: refuses ambiguous Auth owners; rejects ambiguous sign-in and invitation approval even when the second email match is on another Auth page"
+    },
+    {
+      "id": "stale-browser-invitation",
+      "problem": "An invitation left in browser storage by a removed account or another recipient blocked enrollment despite a fresh approval for the verified email.",
+      "fix": "Discard an invalid stored invitation and retry only against the verified email's current server-side approval. Clear obsolete invitation storage after enrollment.",
+      "regression": "tests/browser/beta.spec.ts: recovers from an old invitation stored in the browser when the signed-in email has a fresh approval"
+    },
+    {
+      "id": "incomplete-setup-closure",
+      "problem": "Self-service closure was available only after reaching the ready workspace, leaving users unable to close accounts from the initial form or an unfinished setup screen.",
+      "fix": "Offer confirmed account closure before setup, while queued, awaiting phone verification, and after a setup failure. Use the same persistent provider cleanup and final Auth erasure as ready accounts.",
+      "regression": "tests/browser/incomplete-account-closure.spec.ts; tests/lifecycle.test.ts covers closure at profile-only, identity, computer, awaiting-phone, persona, plugin and ready stages"
+    },
+    {
+      "id": "hidden-extra-computer",
+      "problem": "A saved primary computer ID bypassed the inventory check, allowing another computer for the same owner to survive account erasure. Incomplete setup could also adopt an arbitrary matching computer.",
+      "fix": "Always check ownership before deletion, reject ambiguous setup adoption, and verify no owned computer remains after deletion acknowledgement. Keep ownership and beta records with an administrator recovery message until ambiguity is resolved.",
+      "regression": "tests/lifecycle.test.ts: second owned computer despite a saved primary ID; ambiguous adoption after lost create reply; provider acknowledgement while the computer remains listed"
+    },
+    {
+      "id": "closure-browser-transition",
+      "problem": "Live testing reproduced deletion finishing before the browser observed a closing agent. Auth refresh then returned refresh_token_not_found; its raw 400 error left the setup form open. A transient first status failure likewise stopped progress checks when no agent was yet observed.",
+      "fix": "Normalize definitive revoked-session errors to session_expired/401 while retaining temporary Auth errors. Poll while closure is pending, including before the first closing record appears. Clear local sign-in after completed deletion and stop extra polling when a rejected closure request is confirmed not to have started.",
+      "regression": "tests/sign-in.test.ts: permanently revoked versus temporary session refresh; tests/browser/incomplete-account-closure.spec.ts: first closing status request fails; disposable live browser with cleanup forced to finish before the first status read"
+    },
+    {
+      "id": "development-runner-dependency",
+      "problem": "npm audit reported two critical dependency entries for one shell-quote command-injection advisory through the development runner concurrently. No application endpoint exploit was established.",
+      "fix": "Override concurrently's pinned shell-quote 1.9.0 with patched 1.12.0. npm audit now reports zero known vulnerabilities.",
+      "source": "https://github.com/advisories/GHSA-pqg4-j6r4-53mv",
+      "files": [
+        "package.json",
+        "package-lock.json"
+      ]
+    }
+  ],
+  "stateRules": [
+    "A waitlist request grants no Auth, account, or provider access. Removal revokes unused invitations before erasing the request.",
+    "Approved first sign-in may prepare an unconfirmed Auth account. Failed delivery leaves no customer or companion; retry or beta removal handles that record.",
+    "Email verification creates a session. Verified, active invitation acceptance creates the customer atomically; failed acceptance leaves the invitation retryable.",
+    "Accepted accounts may exist before any companion resource. They can now close from the initial setup form.",
+    "Setup retries retain completed phases, persisted provider ownership, and retry credentials. A lost create reply is reconciled before creating anything else.",
+    "Awaiting phone verification is a deliberate pause. Closure remains available without completing verification.",
+    "Persisted deleting state blocks setup and normal account activity. Dispatch failures retain closure intent and are recovered through the outbox, polling, or maintenance.",
+    "Failed computer deletion preserves the identity and account. Failed identity deletion preserves the account and the confirmed computer-removal flag.",
+    "Failed Auth erasure preserves completed provider-removal flags and beta ownership. Retry performs only unfinished work.",
+    "Ambiguous ownership prevents account erasure and requires administrator recovery. It is not treated as successful cleanup.",
+    "Successful Auth erasure atomically removes account, workspace, beta, owned invitations, jobs and leases. A deleted user's old session is rejected; rejoining requires new approval.",
+    "Provider deletion flags represent verified removal through provider APIs. Provider recovery copies and retention policies are separate from application-level erasure."
+  ],
+  "validation": {
+    "unitApiDatabaseTests": 267,
+    "browserTests": 29,
+    "localProductionBuild": "passed",
+    "dependencyAudit": "zero_known_vulnerabilities",
+    "production": "passed_on_custom_domain",
+    "liveFixtures": "Verified first invitation token redemption, session creation, tokenless acceptance, closure before setup, rejection of the erased session, beta/invitation/job cleanup, and isolation across a reused email address.",
+    "recipientEmailsSentByAudit": 0,
+    "providerResourcesCreatedByLiveFixtures": 0,
+    "testFixtureCleanup": "All live disposable Auth and account records removed after each verification.",
+    "productionBuild": "passed",
+    "typecheck": "passed",
+    "liveEvidence": {
+      "capturedAt": "2026-10-07T15:53:36.057Z",
+      "recipientEmailsSent": 0,
+      "providerResourcesCreated": 0,
+      "publishedPreSetupClosureBrowser": "passed",
+      "firstVerificationSessionAndAcceptance": "passed",
+      "deployedPreSetupClosureAndBetaRemoval": "passed",
+      "erasedSessionRejected": true,
+      "closedEmailRequiresNewApproval": true,
+      "cleanupBeforeFirstBrowserStatusRead": "passed",
+      "deployedHistoricalEmailOwnershipGuard": "passed",
+      "disposableFixturesRemoved": true
+    }
+  },
+  "liveInventory": {
+    "observedAt": "2026-10-07T15:57:13.044Z",
+    "publicSignupDisabled": true,
+    "authOnlyAccounts": 0,
+    "acceptedAccountsBeforeSetup": 1,
+    "readyCompanions": 1,
+    "unfinishedOrFailedJobs": 0,
+    "consumedInvitationsWithoutProfile": 0,
+    "ownedComputersWithoutSavedId": 0,
+    "providerComputers": 1,
+    "providerIdentities": 1
+  },
+  "limits": [
+    "This audit covers account lifecycle boundaries. It is not a complete security assessment of every feature or external provider.",
+    "Provider outages, lost replies and ownership conflicts were injected into isolated tests. Live customer resources were not deliberately interrupted or deleted.",
+    "Live inventory is a point-in-time observation; the accepted account awaiting setup is a valid state, not evidence of a failed job.",
+    "Provider retention beyond API-level deletion was not tested."
+  ],
+  "completedAt": "2026-10-07T15:57:14.019Z",
+  "deployment": {
+    "id": "dpl_FRQS9yt5fuTvdjLWCjsyt67NTFJk",
+    "url": "https://potato-potential-kmxwwv27m-venatio-studios.vercel.app",
+    "origin": "https://potato-potential.rgbknights.com",
+    "migration": "20261007151028"
+  }
+}

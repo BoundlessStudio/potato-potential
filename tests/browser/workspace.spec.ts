@@ -307,11 +307,18 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
     page.getByRole("button", { name: "Resume Browser routine" }),
   ).toBeVisible();
   await page.getByRole("link", { name: "Settings", exact: true }).click();
-  const aboutYou = page.getByRole("textbox", { name: "About you", exact: true });
+  const aboutYou = page.getByRole("textbox", {
+    name: "About you",
+    exact: true,
+  });
   await expect(aboutYou).toBeEnabled();
   await aboutYou.fill("Browser-verified memory");
-  await page.getByRole("button", { name: "Save About you", exact: true }).click();
-  await expect(page.getByText("About you saved.", { exact: true })).toBeVisible();
+  await page
+    .getByRole("button", { name: "Save About you", exact: true })
+    .click();
+  await expect(
+    page.getByText("About you saved.", { exact: true }),
+  ).toBeVisible();
   await expect(aboutYou).toHaveValue("Browser-verified memory");
   await page
     .getByRole("link", { name: "Your conversation", exact: true })
@@ -348,15 +355,21 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   ).toHaveCount(0);
   await expect(channels).toHaveText("");
   await channels.click();
-  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  const channelDialog = page.getByRole("dialog", {
+    name: "One companion, wherever you are",
+  });
+  await expect(
+    channelDialog.getByRole("status", {
+      name: "Connection status",
+      exact: true,
+    }),
+  ).toContainText("Connected");
+  await channelDialog.getByRole("tab", { name: "Calls", exact: true }).click();
   await page.getByRole("button", { name: /completed/ }).click();
   await expect(
-    page.getByRole("dialog", { name: "Your call transcript" }),
+    channelDialog.getByRole("heading", { name: "Call transcript" }),
   ).toBeVisible();
-  await page
-    .getByRole("dialog", { name: "Your call transcript" })
-    .getByRole("button", { name: "Close dialog" })
-    .click();
+  await expect(channelDialog).toContainText("Can you help me plan tomorrow?");
   await page.getByRole("button", { name: "Close dialog" }).click();
   expect(errors).toEqual([]);
 });
@@ -404,7 +417,7 @@ test("mobile navigation and overflowing layout", async ({ page }) => {
     page.getByRole("heading", { name: "Computer", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Connect to desktop" }),
+    page.getByRole("button", { name: "Refresh computer" }),
   ).toBeVisible();
   expect(
     await page.evaluate(

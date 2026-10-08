@@ -70,11 +70,20 @@ describe("shared contracts", () => {
   it("never labels an untriggered or explicitly yearly cron as fired once", () => {
     const cron = {
       schedule: "30 9 6 10 *",
+      timezone: "America/Toronto",
       last_run: null,
       name: "Dentist",
     } as Cron;
     expect(isFiredOneTime(cron)).toBe(false);
-    expect(isFiredOneTime({ ...cron, last_run: 1 })).toBe(true);
+    const fired = Date.parse("2026-10-06T13:30:00Z") / 1000;
+    expect(isFiredOneTime({ ...cron, last_run: fired })).toBe(true);
+    expect(isFiredOneTime({ ...cron, last_run: 1 })).toBe(false);
+    expect(
+      isFiredOneTime({ ...cron, last_run: fired, schedule: "30 9 7 10 *" }),
+    ).toBe(false);
+    expect(
+      isFiredOneTime({ ...cron, last_run: fired, schedule: "0 10 6 10 *" }),
+    ).toBe(false);
     expect(
       isFiredOneTime({ ...cron, last_run: 1, name: "Yearly birthday" }),
     ).toBe(false);

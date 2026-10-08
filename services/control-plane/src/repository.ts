@@ -49,6 +49,7 @@ export interface Repository {
   addBetaRequest(email: string): Promise<void>;
   betaRequests(): Promise<BetaRequest[]>;
   saveBetaRequest(request: BetaRequest): Promise<void>;
+  removeBetaRequest(email: string): Promise<void>;
   computerServices(ownerId: string): Promise<ComputerService[]>;
   saveComputerService(service: ComputerService): Promise<void>;
   computerRequests(ownerId: string): Promise<ComputerLinkRequest[]>;
@@ -238,6 +239,13 @@ export class MemoryRepository implements Repository {
   async saveBetaRequest(request: BetaRequest) {
     this.betaRows.set(request.email, structuredClone(request));
   }
+  async removeBetaRequest(email: string) {
+    email = email.trim().toLowerCase();
+    for (const [digest, invitation] of this.invites)
+      if (invitation.email === email && !invitation.usedBy)
+        this.invites.delete(digest);
+    this.betaRows.delete(email);
+  }
   async items(ownerId: string, kind?: string) {
     return [...this.itemRows.values()]
       .filter((row) => row.ownerId === ownerId && (!kind || row.kind === kind))
@@ -296,10 +304,29 @@ export class MemoryRepository implements Repository {
     return [...this.runs.values()].filter((row) => row.ownerId === ownerId);
   }
   async removeCustomer(ownerId: string) {
-    const email = this.profiles.get(ownerId)?.email.toLowerCase();
+    const emails = new Set<string>();
+    const email = this.profiles.get(ownerId)?.email.trim().toLowerCase();
+    if (email) emails.add(email);
+    for (const invitation of this.invites.values())
+      if (invitation.usedBy === ownerId) emails.add(invitation.email);
+    for (const address of emails) {
+      const shared =
+        [...this.profiles.values()].some(
+          (profile) =>
+            profile.id !== ownerId &&
+            profile.email.trim().toLowerCase() === address,
+        ) ||
+        [...this.invites.values()].some(
+          (invitation) =>
+            invitation.email === address &&
+            invitation.usedBy &&
+            invitation.usedBy !== ownerId &&
+            this.profiles.has(invitation.usedBy),
+        );
+      if (!shared) await this.removeBetaRequest(address);
+    }
     for (const [digest, invitation] of this.invites)
-      if (invitation.usedBy === ownerId || invitation.email === email)
-        this.invites.delete(digest);
+      if (invitation.usedBy === ownerId) this.invites.delete(digest);
     this.profiles.delete(ownerId);
     this.agentRows.delete(ownerId);
     for (const map of [
@@ -355,16 +382,14 @@ export class SupabaseRepository implements Repository {
   }
   async saveFileUpload(upload: FileUpload) {
     this.check(
-      await this.client
-        .from("file_uploads")
-        .upsert({
-          id: upload.id,
-          owner_id: upload.ownerId,
-          instance_id: upload.instanceId,
-          state: upload.state,
-          expires_at: upload.expiresAt,
-          upload,
-        }),
+      await this.client.from("file_uploads").upsert({
+        id: upload.id,
+        owner_id: upload.ownerId,
+        instance_id: upload.instanceId,
+        state: upload.state,
+        expires_at: upload.expiresAt,
+        upload,
+      }),
     );
   }
   client: SupabaseClient;
@@ -606,6 +631,20 @@ export class SupabaseRepository implements Repository {
         invitation_box: request.invitationBox || null,
         expires_at: request.expiresAt || null,
       }),
+    );
+  }
+  async removeBetaRequest(email: string) {
+    email = email.trim().toLowerCase();
+    // Revoke pending access first; a failed row deletion remains safe to retry.
+    this.check(
+      await this.client
+        .from("invitations")
+        .delete()
+        .eq("email", email)
+        .is("used_by", null),
+    );
+    this.check(
+      await this.client.from("beta_requests").delete().eq("email", email),
     );
   }
   async items(ownerId: string, kind?: string) {

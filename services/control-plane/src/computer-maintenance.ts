@@ -2,13 +2,24 @@ import type { Agent } from "@boundless/shared";
 import type { Dependencies } from "./app";
 import { HttpError } from "./security";
 import { accessPaused } from "./suspension";
+import { maintainBackupLocked } from "./computer-backups";
 
 export const bootCommand = `node -e 'const fs=require("node:fs");const s=fs.statSync("/proc/1");const t=fs.readFileSync("/proc/1/stat","utf8").split(") ").pop().split(" ")[19];console.log(s.ctimeMs+":"+s.mtimeMs+":"+t)'`;
 export const screenCommand = "DISPLAY=:99 /usr/bin/xdpyinfo | grep dimensions";
-export function computerBusy(agent: Agent) {
+export function computerOperationPending(agent: Agent) {
   return (
     !!agent.computerOperation &&
     ["queued", "applying", "checking"].includes(agent.computerOperation.phase)
+  );
+}
+export function computerBusy(agent: Agent) {
+  return (
+    (computerOperationPending(agent) &&
+      agent.computerOperation?.action !== "backup") ||
+    (agent.computerOperation?.action === "restore" &&
+      !!agent.computerOperation.startedAt &&
+      !agent.computerOperation.rejected &&
+      !agent.computerOperation.reconciled)
   );
 }
 export function screenForTemplate(template: string) {
@@ -28,7 +39,7 @@ export async function failComputerOperation(
     const agent = await dep.repo.agent(ownerId);
     if (
       !agent ||
-      !computerBusy(agent) ||
+      !computerOperationPending(agent) ||
       (operationId && agent.computerOperation?.id !== operationId)
     )
       return;
@@ -60,9 +71,11 @@ export async function maintainComputerLocked(
     !agent?.instanceId ||
     agent.status !== "ready" ||
     !op ||
-    !computerBusy(agent)
+    !computerOperationPending(agent)
   )
     return false;
+  if (op.action === "backup" || op.action === "restore")
+    return maintainBackupLocked(dep, agent as Agent & { instanceId: string });
   const save = () => dep.repo.saveAgent(agent);
   const fail = async (message: string) => {
     op.phase = "failed";

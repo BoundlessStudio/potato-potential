@@ -1,12 +1,14 @@
 import type {
   Connection,
   ComputerMetrics,
+  ComputerBackup,
   Cron,
   CronRun,
   Session,
   Toolkit,
   FileEntry,
   DirectoryListing,
+  FileListing,
   InstanceBudget,
   InstanceUsage,
 } from "@boundless/shared";
@@ -19,8 +21,15 @@ import {
   uploadDirectory,
 } from "./file-transfer";
 import { posix } from "node:path";
+import { browserCheckScript, browserPath } from "./file-browser";
 
 export type SignedPortUrl = { url: string; port: number; expires_at: number };
+const backupSchema = z.object({
+  id: z.string().regex(/^[a-zA-Z0-9_-]{1,128}$/),
+  kind: z.enum(["automatic", "manual"]),
+  created: z.number().int().nonnegative(),
+  size_bytes: z.number().int().nonnegative(),
+});
 export type PublicPortUrl = {
   url: string;
   port: number;
@@ -116,6 +125,9 @@ export async function checkedFetch(
   return res;
 }
 export interface AgentProvider {
+  backups(id: string): Promise<ComputerBackup[]>;
+  backup(id: string): Promise<ComputerBackup>;
+  restore(id: string, backup: string): Promise<void>;
   listInstances(): Promise<any[]>;
   createInstance(body: Record<string, unknown>): Promise<any>;
   instance(id: string): Promise<any>;
@@ -142,6 +154,15 @@ export interface AgentProvider {
   responses(id: string, body: Record<string, unknown>): Promise<Response>;
   statFile(id: string, path: string): Promise<FileEntry>;
   listDirectories(id: string, path: string): Promise<DirectoryListing>;
+  listFiles(id: string, path: string): Promise<FileListing>;
+  manageFile(
+    id: string,
+    action: "create" | "rename" | "delete",
+    path: string,
+    to?: string,
+    modified?: number,
+  ): Promise<void>;
+  archiveFolder(id: string, path: string): Promise<Response>;
   writeBinary(id: string, path: string, bytes: Uint8Array): Promise<FileEntry>;
   downloadFile(id: string, path: string): Promise<Response>;
   stream(id: string, responseId: string): Promise<Response>;
@@ -234,6 +255,42 @@ export class Agent37 implements AgentProvider {
   instance(id: string) {
     return this.json(this.host(`/instances/${id}`));
   }
+  async backups(id: string) {
+    const result = await this.json(
+      this.host(`/instances/${id}/backups`, {}, 30_000),
+    );
+    const parsed = z.array(backupSchema).max(8).safeParse(result?.data);
+    if (!parsed.success)
+      throw new HttpError(
+        502,
+        "invalid_backups",
+        "Couldn’t read the computer’s checkpoints.",
+      );
+    return parsed.data;
+  }
+  async backup(id: string) {
+    const parsed = backupSchema.safeParse(
+      await this.json(
+        this.host(`/instances/${id}/backups`, { method: "POST" }, 60_000),
+      ),
+    );
+    if (!parsed.success)
+      throw new HttpError(
+        502,
+        "invalid_backup",
+        "Couldn’t confirm the saved checkpoint.",
+      );
+    return parsed.data;
+  }
+  async restore(id: string, backup: string) {
+    await this.json(
+      this.host(
+        `/instances/${id}/restore`,
+        { method: "POST", body: JSON.stringify({ backup }) },
+        60_000,
+      ),
+    );
+  }
   async removeInstance(id: string) {
     const result = await this.json(
       this.host(`/instances/${id}`, { method: "DELETE" }),
@@ -318,7 +375,7 @@ export class Agent37 implements AgentProvider {
       body: JSON.stringify(body),
     });
   }
-  async listDirectories(id: string, path: string): Promise<DirectoryListing> {
+  async listFiles(id: string, path: string): Promise<FileListing> {
     path = uploadDirectory(path);
     const result = await this.exec(
       id,
@@ -347,6 +404,8 @@ export class Agent37 implements AgentProvider {
               path: z.string(),
               hidden: z.boolean(),
               type: z.enum(["file", "directory", "symlink", "other"]),
+              size: z.number().nullable().optional().default(null),
+              modified: z.number().optional().default(0),
             }),
           )
           .max(1000),
@@ -363,17 +422,55 @@ export class Agent37 implements AgentProvider {
       parentPath: ["/home/node", "/home/linuxbrew"].includes(path)
         ? null
         : parent,
-      directories: listing.entries
-        .filter(
-          (entry) =>
-            entry.type === "directory" &&
-            !/[\x00-\x1f/\\]/.test(entry.name) &&
-            !["", ".", ".."].includes(entry.name) &&
-            entry.path === `${path}/${entry.name}`,
-        )
-        .map(({ name, path, hidden }) => ({ name, path, hidden })),
+      entries: listing.entries.filter(
+        (entry) =>
+          !/[\x00-\x1f/\\]/.test(entry.name) &&
+          !["", ".", ".."].includes(entry.name) &&
+          entry.path === `${path}/${entry.name}`,
+      ),
       truncated: listing.truncated,
     };
+  }
+  async listDirectories(id: string, path: string): Promise<DirectoryListing> {
+    const listing = await this.listFiles(id, path);
+    const { entries, ...rest } = listing;
+    return {
+      ...rest,
+      directories: entries
+        .filter((entry) => entry.type === "directory")
+        .map(({ name, path, hidden }) => ({ name, path, hidden })),
+    };
+  }
+  async manageFile(
+    id: string,
+    action: "create" | "rename" | "delete",
+    path: string,
+    to?: string,
+    modified?: number,
+  ) {
+    path = browserPath(path, true);
+    if (to) to = browserPath(to, true);
+    const result = await this.exec(
+      id,
+      `node -e ${shellQuote(browserCheckScript)} ${shellQuote(Buffer.from(JSON.stringify({ action, path, to, modified })).toString("base64url"))}`,
+    );
+    const checked = JSON.parse(result.stdout);
+    if (result.exit_code)
+      throw new HttpError(checked.status || 400, checked.code, checked.error);
+    if (action === "create")
+      await this.agent(id, `/files/dir?${new URLSearchParams({ path })}`, {
+        method: "POST",
+      });
+    if (action === "delete")
+      await this.agent(id, `/files?${new URLSearchParams({ path })}`, {
+        method: "DELETE",
+      });
+  }
+  archiveFolder(id: string, path: string) {
+    return this.agent(
+      id,
+      `/files/archive?${new URLSearchParams({ path: browserPath(path) })}`,
+    );
   }
   async statFile(id: string, path: string): Promise<FileEntry> {
     const result = await this.exec(

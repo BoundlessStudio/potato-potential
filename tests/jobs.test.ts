@@ -7,8 +7,10 @@ import { MemoryRepository } from "../services/control-plane/src/repository";
 import {
   executeJobSlice,
   SupabaseJobs,
+  recoverPendingWork,
 } from "../services/control-plane/src/jobs";
 import { ProviderError } from "../services/control-plane/src/providers";
+import { HttpError } from "../services/control-plane/src/security";
 
 const owner = randomUUID(),
   jobId = randomUUID(),
@@ -54,6 +56,54 @@ function jobQueue(finish = vi.fn().mockResolvedValue(undefined), failures = 0) {
     finish,
   } as unknown as SupabaseJobs;
 }
+it("continues repairing other accounts when the first workflow dispatch fails", async () => {
+  const later = randomUUID();
+  const chain = {
+    select: () => chain,
+    in: () => chain,
+    lte: () => chain,
+    limit: async () => ({ data: [{ id: jobId }, { id: later }], error: null }),
+  };
+  const jobs = new SupabaseJobs(
+    { from: () => chain } as unknown as SupabaseClient,
+    async () => "unused",
+  );
+  const dispatch = vi.spyOn(jobs, "dispatch").mockResolvedValue();
+  dispatch.mockRejectedValueOnce(
+    new HttpError(503, "workflow_dispatch_interrupted", "Dispatch unavailable"),
+  );
+  await expect(jobs.repair()).rejects.toMatchObject({
+    code: "workflow_dispatch_interrupted",
+  });
+  expect(dispatch.mock.calls).toEqual([[jobId], [later]]);
+});
+it("recovers unqueued setup and cleanup even when repair or another account fails", async () => {
+  const fresh = randomUUID(),
+    closing = randomUUID(),
+    failed = randomUUID();
+  const template = (await repo.agent(owner))!;
+  await repo.saveAgent({ ...template, ownerId: fresh, status: "new" });
+  await repo.saveAgent({ ...template, ownerId: closing, status: "deleting" });
+  await repo.saveAgent({ ...template, ownerId: failed, status: "failed" });
+  const error = new HttpError(
+    503,
+    "workflow_dispatch_interrupted",
+    "Dispatch unavailable",
+  );
+  const jobs = {
+    repair: vi.fn().mockRejectedValue(error),
+    send: vi.fn().mockResolvedValue(undefined),
+  };
+  jobs.send.mockRejectedValueOnce(error);
+  await expect(recoverPendingWork(dep, jobs)).rejects.toMatchObject({
+    code: "workflow_dispatch_interrupted",
+  });
+  expect(jobs.send.mock.calls).toEqual([
+    ["reconcile", owner],
+    ["provision", fresh],
+    ["cleanup", closing],
+  ]);
+});
 
 it("recovers saved pause intent after an interrupted provider call through the durable outbox", async () => {
   const agent = (await repo.agent(owner))!;

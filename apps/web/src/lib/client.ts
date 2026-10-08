@@ -1,4 +1,8 @@
 import { createBrowserClient } from "@supabase/ssr";
+import {
+  isAuthApiError,
+  isAuthSessionMissingError,
+} from "@supabase/supabase-js";
 import { parseSse, type StreamEvent } from "@boundless/shared";
 import {
   downloadDestination,
@@ -8,6 +12,25 @@ export const demo = process.env.NEXT_PUBLIC_DEMO_MODE === "true";
 const base =
   process.env.NEXT_PUBLIC_CONTROL_URL || (demo ? "http://localhost:4000" : "");
 let client: ReturnType<typeof createBrowserClient> | null = null;
+let refreshing: Promise<string> | null = null;
+function sessionFailure(error: unknown) {
+  if (
+    isAuthSessionMissingError(error) ||
+    (isAuthApiError(error) &&
+      [
+        "refresh_token_not_found",
+        "refresh_token_already_used",
+        "session_not_found",
+        "user_not_found",
+      ].includes(error.code || ""))
+  )
+    return new ApiError(
+      "session_expired",
+      "Your session has ended. Please sign in again.",
+      401,
+    );
+  return error;
+}
 export function supabase() {
   if (!client) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -25,8 +48,21 @@ export async function credential() {
     const value = localStorage.getItem("boundless-demo-user");
     return value === "signed-out" ? "" : value || "demo";
   }
-  const { data } = await supabase().auth.getSession();
+  const { data, error } = await supabase().auth.getSession();
+  if (error) throw sessionFailure(error);
   return data.session?.access_token || "";
+}
+async function refreshCredential(previous: string) {
+  const current = await credential();
+  if (current !== previous) return current;
+  refreshing ??= (async () => {
+    const { data, error } = await supabase().auth.refreshSession();
+    if (error) throw sessionFailure(error);
+    return data.session?.access_token || "";
+  })().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
 }
 export async function joinBeta(email: string, website = "") {
   const response = await fetch(`${base}/api/beta`, {
@@ -47,10 +83,29 @@ export async function sendSignInLink(email: string, next?: string) {
   if (destination !== "/")
     localStorage.setItem(DOWNLOAD_RETURN_KEY, destination);
   else localStorage.removeItem(DOWNLOAD_RETURN_KEY);
-  if (demo) return;
+  const canonicalEmail = email.trim().toLowerCase();
+  const approval = await fetch(`${base}/api/auth/signin`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: canonicalEmail }),
+    cache: "no-store",
+  });
+  const body = await approval.json().catch(() => ({}));
+  if (!approval.ok) {
+    throw new ApiError(
+      body.error?.code || "signin_unavailable",
+      body.error?.message ||
+        "Couldn’t check your beta access. Please try again.",
+      approval.status,
+    );
+  }
+  if (body.ready !== true)
+    throw new Error("Couldn’t check your beta access. Please try again.");
+  if (demo || body.emailSent === true) return;
   const { error } = await supabase().auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
+    email: canonicalEmail,
     options: {
+      shouldCreateUser: false,
       emailRedirectTo: `${window.location.origin}/auth/callback`,
     },
   });
@@ -66,15 +121,22 @@ export class ApiError extends Error {
   }
 }
 export async function request(path: string, init: RequestInit = {}) {
-  const response = await fetch(`${base}/api${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${await credential()}`,
-      "Content-Type": "application/json",
-      ...init.headers,
-    },
-    cache: "no-store",
-  });
+  const auth = await credential();
+  const send = (token: string) =>
+    fetch(`${base}/api${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        ...init.headers,
+      },
+      cache: "no-store",
+    });
+  let response = await send(auth);
+  if (response.status === 401 && !demo && auth && !init.signal?.aborted) {
+    const token = await refreshCredential(auth);
+    if (token) response = await send(token);
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new ApiError(

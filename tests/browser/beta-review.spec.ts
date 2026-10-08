@@ -139,8 +139,19 @@ test("shows a searchable request list, protects existing accounts, and sends app
     "invited@example.com",
   ])
     await expect(
-      page.getByRole("row").filter({ hasText: email }).getByRole("button"),
+      page
+        .getByRole("row")
+        .filter({ hasText: email })
+        .getByRole("button", {
+          name: /Approve and invite|Send invitation to/,
+        }),
     ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Remove .+ from beta list/ }),
+  ).toHaveCount(2);
+  await expect(
+    page.getByRole("button", { name: /Close account for/ }),
+  ).toHaveCount(2);
   await page
     .getByRole("searchbox", { name: "Search requests" })
     .fill(" WAITING@EXAMPLE ");
@@ -224,6 +235,279 @@ test("restores token access in the tab, clears it on lock, and expires it when t
     await page.evaluate(() => sessionStorage.getItem("boundless-beta-access")),
   ).toBeNull();
 });
+
+test("removes waiting and invited people from the list and updates the count", async ({
+  page,
+}) => {
+  const people = [
+    {
+      email: "waiting@example.com",
+      status: "awaiting_review",
+      accountExists: false,
+      requestedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      email: "invited@example.com",
+      status: "pending",
+      accountExists: false,
+      requestedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const removed: string[] = [];
+  await page.route("**/api/beta/requests", async (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({
+        json: {
+          requests: people.filter((person) => !removed.includes(person.email)),
+        },
+      });
+    expect(route.request().method()).toBe("DELETE");
+    expect(route.request().headers().authorization).toBe(`Bearer ${betaToken}`);
+    const { email } = route.request().postDataJSON();
+    await gate;
+    removed.push(email);
+    return route.fulfill({ json: { email, removed: true } });
+  });
+  await page.goto("/beta");
+  await unlock(page);
+  const first = page.getByRole("button", {
+    name: "Remove waiting@example.com from beta list",
+    exact: true,
+  });
+  await first.click();
+  await expect(first).toBeDisabled();
+  await expect(first).toHaveText("Removing…");
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", {
+      name: "Approve and invite waiting@example.com",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  release();
+  for (const person of people) {
+    if (person !== people[0])
+      await page
+        .getByRole("button", {
+          name: `Remove ${person.email} from beta list`,
+          exact: true,
+        })
+        .click();
+    await expect(
+      page.getByRole("row").filter({ hasText: person.email }),
+    ).toHaveCount(0);
+    await expect(page.locator('.toast[role="status"]')).toContainText(
+      `${person.email} removed from the beta list.`,
+    );
+    await expect(page.locator(".beta-review-count")).toHaveText(
+      "0 awaiting review",
+    );
+  }
+  expect(removed).toEqual(people.map((person) => person.email));
+  await expect(
+    page.getByText("No beta requests yet.", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByText("No beta requests yet.", { exact: true }),
+  ).toBeVisible();
+});
+
+test("confirms existing-account closure, retains the entry while closing, and refreshes after cleanup", async ({
+  page,
+}) => {
+  const person = {
+    email: "joined@example.com",
+    status: "accepted",
+    accountExists: true,
+    accountClosing: false,
+    requestedAt: "2026-01-01T00:00:00Z",
+  };
+  let submissions = 0,
+    completed = false,
+    release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/api/beta/requests", async (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({ json: { requests: completed ? [] : [person] } });
+    expect(route.request().postDataJSON()).toEqual({
+      email: person.email,
+      closeAccount: true,
+    });
+    expect(route.request().headers().authorization).toBe(`Bearer ${betaToken}`);
+    submissions++;
+    await gate;
+    person.accountClosing = true;
+    return route.fulfill({
+      status: 202,
+      json: { email: person.email, removed: false, queued: true },
+    });
+  });
+  await page.goto("/beta");
+  await unlock(page);
+  const close = page.getByRole("button", {
+    name: `Close account for ${person.email}`,
+    exact: true,
+  });
+  await close.click();
+  const dialog = page.getByRole("dialog", { name: "Close this account?" });
+  await expect(dialog).toContainText(person.email);
+  await expect(dialog).toContainText("This cannot be undone.");
+  await dialog
+    .getByRole("button", { name: "Keep account", exact: true })
+    .click();
+  expect(submissions).toBe(0);
+  await close.click();
+  await dialog
+    .getByRole("button", { name: "Close account and remove", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("button", { name: "Closing account…", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    dialog.getByRole("button", { name: "Keep account", exact: true }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  release();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("row").filter({ hasText: person.email }),
+  ).toContainText("Closing account");
+  await expect(close).toHaveText("Retry account closure");
+  await expect(page.locator('.toast[role="status"]')).toContainText(
+    "will be removed when cleanup finishes",
+  );
+  expect(submissions).toBe(1);
+  completed = true;
+  await expect(
+    page.getByText("No beta requests yet.", { exact: true }),
+  ).toBeVisible({ timeout: 10000 });
+});
+
+test("offers a closure retry after queue dispatch fails", async ({ page }) => {
+  const person = {
+    email: "retry-close@example.com",
+    status: "accepted",
+    accountExists: true,
+    accountClosing: false,
+    requestedAt: "2026-01-01T00:00:00Z",
+  };
+  let submissions = 0;
+  await page.route("**/api/beta/requests", (route) => {
+    if (route.request().method() === "GET")
+      return route.fulfill({ json: { requests: [person] } });
+    submissions++;
+    person.accountClosing = true;
+    return route.fulfill(
+      submissions === 1
+        ? {
+            status: 503,
+            json: {
+              error: { message: "Cleanup could not be queued. Retry shortly." },
+            },
+          }
+        : {
+            status: 202,
+            json: { email: person.email, removed: false, queued: true },
+          },
+    );
+  });
+  await page.goto("/beta");
+  await unlock(page);
+  await page
+    .getByRole("button", {
+      name: `Close account for ${person.email}`,
+      exact: true,
+    })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Close this account?" });
+  await dialog
+    .getByRole("button", { name: "Close account and remove", exact: true })
+    .click();
+  await expect(page.locator('.toast[role="alert"]')).toContainText(
+    "Cleanup could not be queued.",
+  );
+  await expect(
+    dialog.getByRole("button", {
+      name: "Close account and remove",
+      exact: true,
+    }),
+  ).toBeEnabled();
+  await dialog
+    .getByRole("button", { name: "Close account and remove", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: `Close account for ${person.email}`,
+      exact: true,
+    }),
+  ).toHaveText("Retry account closure");
+  expect(submissions).toBe(2);
+});
+
+for (const status of [500, 401])
+  test(`handles beta removal failure ${status} without reporting success`, async ({
+    page,
+  }) => {
+    const person = {
+      email: "keep@example.com",
+      status: "awaiting_review",
+      accountExists: false,
+      requestedAt: "2026-01-01T00:00:00Z",
+    };
+    await page.route("**/api/beta/requests", (route) =>
+      route.fulfill(
+        route.request().method() === "GET"
+          ? { json: { requests: [person] } }
+          : {
+              status,
+              json: { error: { message: "Removal failed. Please try again." } },
+            },
+      ),
+    );
+    await page.goto("/beta");
+    await unlock(page);
+    await page
+      .getByRole("button", {
+        name: "Remove keep@example.com from beta list",
+        exact: true,
+      })
+      .click();
+    await expect(page.locator('.toast[role="alert"]')).toContainText(
+      "Removal failed. Please try again.",
+    );
+    await expect(page.locator('.toast[role="status"]')).toHaveCount(0);
+    if (status === 401) {
+      await expect(
+        page.getByRole("heading", { name: "Open the beta list." }),
+      ).toBeVisible();
+      expect(
+        await page.evaluate(() =>
+          sessionStorage.getItem("boundless-beta-access"),
+        ),
+      ).toBeNull();
+    } else {
+      await expect(
+        page.getByRole("row").filter({ hasText: person.email }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole("button", {
+          name: "Remove keep@example.com from beta list",
+          exact: true,
+        }),
+      ).toBeEnabled();
+    }
+  });
 
 test("retains approval and offers an invitation retry after a failed send", async ({
   page,
@@ -334,6 +618,18 @@ test("connects public signup to the guarded beta page and approval through the a
   await expect(page.getByRole("row").filter({ hasText: email })).toContainText(
     "Invited",
   );
+  await page
+    .getByRole("button", {
+      name: `Remove ${email} from beta list`,
+      exact: true,
+    })
+    .click();
+  await expect(page.getByRole("row").filter({ hasText: email })).toHaveCount(0);
+  await expect(page.locator('.toast[role="status"]')).toContainText(
+    `${email} removed from the beta list.`,
+  );
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByRole("row").filter({ hasText: email })).toHaveCount(0);
   expect(
     await page.evaluate(() => localStorage.getItem("boundless-demo-user")),
   ).toBe("signed-out");

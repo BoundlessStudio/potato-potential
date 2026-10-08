@@ -10,7 +10,7 @@ let agent: {
   ownerId: string;
   deletion: { instance: boolean; identity: boolean };
 } | null;
-let requests: string[];
+let requests: string[], betaStatus: number;
 
 beforeEach(async () => {
   owner = randomUUID();
@@ -19,6 +19,7 @@ beforeEach(async () => {
   customer = { id: owner, email: "closing@example.com" };
   agent = { ownerId: owner, deletion: { instance: true, identity: true } };
   requests = [];
+  betaStatus = 204;
   server = createServer((req, res) => {
     const url = new URL(req.url!, "http://localhost");
     requests.push(`${req.method} ${url.pathname}${url.search}`);
@@ -48,6 +49,22 @@ beforeEach(async () => {
       agent = null;
       res.statusCode = 204;
       res.end();
+    } else if (
+      req.method === "DELETE" &&
+      url.pathname === "/rest/v1/invitations"
+    ) {
+      res.statusCode = 204;
+      res.end();
+    } else if (
+      req.method === "DELETE" &&
+      url.pathname === "/rest/v1/beta_requests"
+    ) {
+      res.statusCode = betaStatus;
+      res.end(
+        betaStatus === 204
+          ? undefined
+          : JSON.stringify({ message: "Beta storage unavailable" }),
+      );
     } else {
       res.statusCode = 400;
       res.end(JSON.stringify({ message: "Unexpected fixture request" }));
@@ -109,4 +126,22 @@ it("allows an idempotent retry after Auth and its cascaded customer are already 
     `DELETE /auth/v1/admin/users/${owner}`,
     `DELETE /rest/v1/customers?id=eq.${owner}`,
   ]);
+});
+
+it("removes a beta entry by canonical email without deleting other account records", async () => {
+  await repo.removeBetaRequest(" Closing@Example.com ");
+  expect(requests).toEqual([
+    "DELETE /rest/v1/invitations?email=eq.closing%40example.com&used_by=is.null",
+    "DELETE /rest/v1/beta_requests?email=eq.closing%40example.com",
+  ]);
+  expect(authExists).toBe(true);
+  expect(customer?.id).toBe(owner);
+  expect(agent?.ownerId).toBe(owner);
+});
+
+it("reports beta storage deletion failures so removal can be retried", async () => {
+  betaStatus = 503;
+  await expect(
+    repo.removeBetaRequest("closing@example.com"),
+  ).rejects.toMatchObject({ status: 500 });
 });

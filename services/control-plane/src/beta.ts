@@ -4,13 +4,13 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Dependencies } from "./app";
 import { hash, HttpError, matchesHash, seal, token, unseal } from "./security";
-import { requireInvitationEmail, sendInvitationEmail } from "./invitations";
+import {
+  betaLease,
+  requireInvitationEmail,
+  sendInvitationEmail,
+} from "./invitations";
 
 const emailSchema = z.string().trim().toLowerCase().max(254).pipe(z.email());
-const betaLease = (email: string) => {
-  const value = hash(`beta:${email}`);
-  return `${value.slice(0, 8)}-${value.slice(8, 12)}-4${value.slice(13, 16)}-8${value.slice(17, 20)}-${value.slice(20, 32)}`;
-};
 
 export function registerBetaRoutes(
   app: Express,
@@ -49,12 +49,18 @@ export function registerBetaRoutes(
   });
 
   async function accounts() {
-    const emails = new Set<string>(),
-      ids = new Set<string>();
+    const ids = new Set<string>();
+    const byEmail = new Map<string, Set<string>>();
+    const remember = (email: string, id: string) => {
+      const canonical = email.trim().toLowerCase();
+      const owners = byEmail.get(canonical) || new Set<string>();
+      owners.add(id);
+      byEmail.set(canonical, owners);
+    };
     if (config.demo) {
       for (const profile of await repo.customers()) {
-        emails.add(profile.email.toLowerCase());
         ids.add(profile.id);
+        remember(profile.email, profile.id);
       }
     } else {
       for (let page = 1; ; page++) {
@@ -69,13 +75,32 @@ export function registerBetaRoutes(
             "Couldn’t check user accounts. Please try again.",
           );
         for (const user of data.users) {
-          if (user.email) emails.add(user.email.toLowerCase());
+          if (user.email) {
+            remember(user.email, user.id);
+          }
           ids.add(user.id);
         }
         if (data.users.length < 1000) break;
       }
     }
-    return { emails, ids };
+    const enrolled = new Set(
+      (await repo.customers()).map((profile) => profile.id),
+    );
+    return { ids, byEmail, enrolled };
+  }
+
+  function accountOwners(
+    email: string,
+    invitations: Awaited<ReturnType<typeof repo.invitations>>,
+    existing: Awaited<ReturnType<typeof accounts>>,
+  ) {
+    const owners = new Set(existing.byEmail.get(email));
+    for (const row of invitations) {
+      const owner = row.used_by || row.usedBy;
+      if (row.email.toLowerCase() === email && existing.ids.has(owner))
+        owners.add(owner);
+    }
+    return [...owners];
   }
 
   router.get("/requests", async (_req, res) => {
@@ -83,6 +108,11 @@ export function registerBetaRoutes(
     if (!requests.length) return res.json({ requests: [] });
     const invitations = await repo.invitations();
     const existing = await accounts();
+    const closing = new Set(
+      (await repo.agents())
+        .filter((agent) => agent.status === "deleting")
+        .map((agent) => agent.ownerId),
+    );
     res.json({
       requests: requests.map((request) => {
         const previous = invitations.filter(
@@ -100,8 +130,13 @@ export function registerBetaRoutes(
           approvedAt: request.approvedAt,
           sentAt: request.sentAt,
           accountExists:
-            existing.emails.has(request.email) ||
+            [...(existing.byEmail.get(request.email) || [])].some((id) =>
+              existing.enrolled.has(id),
+            ) ||
             previous.some((row) => existing.ids.has(row.used_by || row.usedBy)),
+          accountClosing: accountOwners(request.email, previous, existing).some(
+            (owner) => closing.has(owner),
+          ),
           status:
             request.approvedAt && !request.sentAt
               ? "approved"
@@ -115,6 +150,52 @@ export function registerBetaRoutes(
         };
       }),
     });
+  });
+
+  router.delete("/requests", async (req, res) => {
+    const { email, closeAccount } = z
+      .object({
+        email: emailSchema,
+        closeAccount: z.boolean().default(false),
+      })
+      .parse(req.body);
+    const queued = await repo.locked(betaLease(email), async () => {
+      if (
+        !(await repo.betaRequests()).some((request) => request.email === email)
+      )
+        return false;
+      const owners = accountOwners(
+        email,
+        await repo.invitations(),
+        await accounts(),
+      );
+      if (owners.length > 1)
+        throw new HttpError(
+          409,
+          "account_ownership_conflict",
+          "This email is linked to more than one account. Resolve the account ownership before closing it.",
+        );
+      const owner = owners[0];
+      if (owner) {
+        const profile = await repo.profile(owner);
+        if (profile && !closeAccount)
+          throw new HttpError(
+            409,
+            "account_exists",
+            "This person has an account. Choose Close account to remove them from the beta list.",
+          );
+        if (profile) {
+          await dep.lifecycle.requestCleanup(owner);
+          await dep.queue.send("cleanup", owner);
+          return true;
+        }
+        // Auth-only accounts have no companion resources to enqueue for cleanup.
+        await dep.lifecycle.cleanup(owner, { unenrolledOnly: true });
+      }
+      await repo.removeBetaRequest(email);
+      return false;
+    });
+    res.status(queued ? 202 : 200).json({ email, removed: !queued, queued });
   });
 
   router.post("/invitations", async (req, res) => {
@@ -133,8 +214,16 @@ export function registerBetaRoutes(
         (row) => row.email.toLowerCase() === email,
       );
       const existing = await accounts();
+      if (accountOwners(email, previous, existing).length > 1)
+        throw new HttpError(
+          409,
+          "account_ownership_conflict",
+          "This email is linked to more than one account. Resolve the account ownership before inviting it.",
+        );
       if (
-        existing.emails.has(email) ||
+        [...(existing.byEmail.get(email) || [])].some((id) =>
+          existing.enrolled.has(id),
+        ) ||
         previous.some((row) => existing.ids.has(row.used_by || row.usedBy))
       )
         throw new HttpError(

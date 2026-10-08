@@ -118,10 +118,15 @@ it("requires a new approval after deletion, mints a fresh token and erases the o
   ).toBe(409);
   await repo.removeCustomer(DEMO_NEW_USER);
   expect(await repo.invitations()).toHaveLength(0);
-  expect(await repo.betaRequests()).toHaveLength(1);
+  expect(await repo.betaRequests()).toHaveLength(0);
   expect(
     (await call("/invitations/accept", "POST", {}, "demo-new")).status,
   ).toBe(403);
+  expect(
+    (await call("/beta/invitations", "POST", { email: "new@example.com" }))
+      .status,
+  ).toBe(404);
+  await call("/beta", "POST", { email: "new@example.com" });
   expect(
     (
       await call("/beta/invitations", "POST", {

@@ -6,15 +6,18 @@ import cors from "cors";
 import rateLimit from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, isAuthRetryableFetchError } from "@supabase/supabase-js";
 import {
   isFiredOneTime,
   itemSchema,
   parseSse,
   profileSchema,
   publicAgent,
+  routineNotificationSuffix,
+  routinePatchSchema,
   type Agent,
   type CronRun,
+  type Conversation,
   type Profile,
   type WorkspaceItem,
   fileAttachmentText,
@@ -22,12 +25,18 @@ import {
 import type { Config } from "./config";
 import type { Repository } from "./repository";
 import type { AgentProvider, InkboxProvider } from "./providers";
-import { Lifecycle } from "./lifecycle";
+import { Lifecycle, WORKSPACE_HELPER_VERSION } from "./lifecycle";
 import { DEMO_EMAIL, DEMO_NEW_USER, DEMO_USER } from "./demo";
 import { HttpError, hash, matchesHash, token, seal, unseal } from "./security";
 import { boundedSse } from "./streams";
-import { computerBusy, screenForTemplate } from "./computer-maintenance";
+import {
+  computerBusy,
+  computerOperationPending,
+  screenForTemplate,
+} from "./computer-maintenance";
+import { registerBackupRoutes } from "./computer-backups";
 import { registerBetaRoutes } from "./beta";
+import { registerSignInRoutes } from "./sign-in";
 import { registerFileRoutes, cleanUploadsLocked } from "./files";
 import { registerBudgetRoutes } from "./budget";
 import { registerUsageRoutes } from "./usage";
@@ -44,14 +53,6 @@ import {
   reconcileSuspensionLocked,
 } from "./suspension";
 import type { InvitationEmail } from "./invitations";
-import {
-  isTask,
-  linkTaskSession,
-  ownedTask,
-  sessionIdSchema,
-  taskHistory,
-  WORKSPACE_HELPER_VERSION,
-} from "./task-sessions";
 
 export type Queue = {
   send(
@@ -69,12 +70,15 @@ export type Dependencies = {
   lifecycle: Lifecycle;
   queue: Queue;
   invitationEmail?: (input: InvitationEmail) => Promise<void>;
+  signInEmail?: (input: InvitationEmail) => Promise<void>;
 };
 type Actor = { id: string; email: string; operator: boolean };
 type AuthRequest = Request & { actor: Actor };
 const actor = (req: Request) => (req as AuthRequest).actor;
 const uuid = z.uuid();
 const remoteId = z.string().regex(/^[a-f0-9]{32}$/);
+// Native Hermes/cron notification ids can differ from gateway session ids.
+const sessionIdSchema = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/);
 const cronId = z.string().regex(/^[a-f0-9]{12}$/);
 const date = () => new Date().toISOString();
 const emailSchema = z.string().trim().toLowerCase().max(254).pipe(z.email());
@@ -120,8 +124,6 @@ export async function reconcileLocked(dep: Dependencies, ownerId: string) {
   );
   const crons = await dep.a37.crons(agent.instanceId);
   for (const cron of crons) {
-    if (cron.agent !== "hermes")
-      await dep.a37.patchCron(agent.instanceId, cron.id, { agent: "hermes" });
     if (!cron.last_run) continue;
     const runs = (await dep.a37.cronRuns(agent.instanceId, cron.id)).map(
       (run) => ({
@@ -261,11 +263,10 @@ export function createApp(dep: Dependencies) {
       .object({
         instance_id: z.string().regex(/^[a-z0-9]{10}$/),
         event_id: uuid,
-        command: z.enum(["list", "save", "notify", "link", "history"]),
+        command: z.enum(["list", "save", "notify"]),
         item: itemSchema.optional(),
         text: z.string().max(10000).optional(),
         session_id: sessionIdSchema.optional(),
-        task_id: uuid.optional(),
       })
       .parse(req.body);
     const agent = await repo.byInstance(body.instance_id);
@@ -275,24 +276,12 @@ export function createApp(dep: Dependencies) {
       !agent ||
       agent.status !== "ready" ||
       accessPaused(agent) ||
+      computerBusy(agent) ||
       !matchesHash(credential, agent.callbackHash)
     )
       throw new HttpError(403, "forbidden", "Callback authentication failed.");
     if (body.command === "list")
       return res.json({ items: await repo.items(agent.ownerId) });
-    if (body.command === "history") {
-      if (!body.task_id)
-        throw new HttpError(400, "invalid_request", "A task id is required.");
-      return res.json(
-        await taskHistory(
-          repo,
-          a37,
-          { ...agent, instanceId: body.instance_id },
-          body.task_id,
-          body.session_id,
-        ),
-      );
-    }
     if (body.command === "notify") {
       if (!body.text?.trim())
         throw new HttpError(
@@ -323,20 +312,6 @@ export function createApp(dep: Dependencies) {
           "forbidden",
           "Callback authentication failed.",
         );
-      if (body.command === "link") {
-        if (!body.task_id || !body.session_id)
-          throw new HttpError(
-            400,
-            "invalid_request",
-            "A task id and session id are required.",
-          );
-        return linkTaskSession(
-          repo,
-          await ownedTask(repo, current.ownerId, body.task_id),
-          body.instance_id,
-          body.session_id,
-        );
-      }
       if (!body.item)
         throw new HttpError(400, "invalid_request", "An item is required.");
       const id = body.item.id || body.event_id;
@@ -349,14 +324,9 @@ export function createApp(dep: Dependencies) {
         ownerId: current.ownerId,
         createdAt: previous?.createdAt || date(),
         updatedAt: date(),
-        ...(previous?.sessionLinks
-          ? { sessionLinks: previous.sessionLinks }
-          : {}),
       };
       await repo.saveItem(saved);
-      return body.session_id && isTask(saved)
-        ? linkTaskSession(repo, saved, body.instance_id, body.session_id)
-        : saved;
+      return saved;
     });
     res.json({ item });
   });
@@ -391,6 +361,7 @@ export function createApp(dep: Dependencies) {
     : createClient(config.supabaseUrl, config.supabaseKey, {
         auth: { persistSession: false, autoRefreshToken: false },
       });
+  registerSignInRoutes(app, dep, authClient);
   registerBetaRoutes(app, dep, authClient);
   app.use("/api", async (req, _res, next) => {
     const credential =
@@ -405,6 +376,18 @@ export function createApp(dep: Dependencies) {
       };
     } else {
       const { data, error } = await authClient!.auth.getUser(credential);
+      if (
+        error &&
+        (isAuthRetryableFetchError(error) ||
+          !error.status ||
+          error.status === 429 ||
+          error.status >= 500)
+      )
+        throw new HttpError(
+          502,
+          "auth_unavailable",
+          "Sign-in checks are temporarily unavailable. Please try again.",
+        );
       if (error || !data.user?.email || !data.user.email_confirmed_at)
         throw new HttpError(
           401,
@@ -457,7 +440,7 @@ export function createApp(dep: Dependencies) {
       throw new HttpError(
         409,
         "computer_maintenance",
-        "Your companion’s computer is restarting. Try again when it is ready.",
+        "Your companion’s computer is being looked after. Try again when it is ready.",
       );
     return agent as Agent & { instanceId: string };
   }
@@ -466,6 +449,7 @@ export function createApp(dep: Dependencies) {
       throw new HttpError(403, "forbidden", "Operator access is required.");
   }
   registerComputerRoutes(app, dep, (req) => actor(req).id, account);
+  registerBackupRoutes(app, dep, (req) => actor(req).id, account);
   registerFileRoutes(app, dep, (req) => actor(req).id, ready);
   registerBudgetRoutes(app, dep, (req) => actor(req).id, account);
   registerUsageRoutes(app, dep, (req) => actor(req).id, account);
@@ -473,6 +457,10 @@ export function createApp(dep: Dependencies) {
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);
     let agent = await repo.agent(actor(req).id);
+    // Recover a request interrupted between saving setup and creating its first
+    // outbox job. Existing jobs are deduplicated by the queue.
+    if (agent && ["new", "provisioning"].includes(agent.status))
+      await queue.send("provision", actor(req).id).catch(() => {});
     if (agent?.status === "deleting")
       await queue.send("cleanup", actor(req).id).catch(() => {});
     if (agent && suspensionPending(agent))
@@ -480,7 +468,7 @@ export function createApp(dep: Dependencies) {
     if (
       agent &&
       (["new", "provisioning", "failed", "deleting"].includes(agent.status) ||
-        computerBusy(agent))
+        computerOperationPending(agent))
     )
       await queue.recover?.(actor(req).id).catch(() => {});
     let challenge: string | undefined;
@@ -622,22 +610,11 @@ export function createApp(dep: Dependencies) {
         id: input.id || randomUUID(),
         createdAt: prior?.createdAt || date(),
         updatedAt: date(),
-        ...(prior?.sessionLinks ? { sessionLinks: prior.sessionLinks } : {}),
       };
       await repo.saveItem(item);
       return item;
     });
     res.json({ item });
-  });
-  app.get("/api/items/:id/history", async (req, res) => {
-    const agent = await ready(req);
-    const sessionId =
-      req.query.sessionId === undefined
-        ? undefined
-        : sessionIdSchema.parse(req.query.sessionId);
-    res.json(
-      await taskHistory(repo, a37, agent, uuid.parse(req.params.id), sessionId),
-    );
   });
   app.delete("/api/items/:id", async (req, res) => {
     await account(req);
@@ -661,7 +638,12 @@ export function createApp(dep: Dependencies) {
     const indexed = await repo.conversations(actor(req).id);
     const remote = await a37.sessions(agent.instanceId);
     for (const row of remote) {
-      if (!indexed.some((item) => item.id === row.id)) {
+      const existing = indexed.find((item) => item.id === row.id);
+      const title = row.title || row.name;
+      if (existing) {
+        if (existing.channel === "web" && title && title !== existing.title)
+          await repo.saveConversation({ ...existing, title });
+      } else {
         const session = await a37.session(agent.instanceId, row.id);
         const marker =
           session.history.find((message) => message.role === "user")?.content ||
@@ -684,7 +666,93 @@ export function createApp(dep: Dependencies) {
         });
       }
     }
-    res.json({ sessions: await repo.conversations(actor(req).id) });
+    res.json({
+      sessions: (await repo.conversations(actor(req).id)).sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt),
+      ),
+    });
+  });
+  async function selectWebSession(
+    req: Request,
+    id: string,
+    create: boolean,
+    expectedSessionId?: string,
+  ): Promise<Conversation> {
+    return repo.locked(actor(req).id, async () => {
+      const agent = await ready(req);
+      const existing = (await repo.conversations(agent.ownerId)).find(
+        (row) => row.id === id,
+      );
+      if (!create && !existing)
+        throw new HttpError(404, "not_found", "Conversation not found.");
+      if (existing && existing.channel !== "web")
+        throw new HttpError(
+          409,
+          "session_read_only",
+          "Continue this conversation in its original channel.",
+        );
+      // Retrying a successful selection is safe even after its reply was lost.
+      if (agent.mainSessionId !== id) {
+        if (expectedSessionId && expectedSessionId !== agent.mainSessionId)
+          throw new HttpError(
+            409,
+            "conversation_changed",
+            "Your conversation changed in another tab. Reload and try again.",
+          );
+        if (
+          agent.mainSessionId &&
+          (await a37.session(agent.instanceId, agent.mainSessionId))
+            .active_response_id
+        )
+          throw new HttpError(
+            409,
+            "session_busy",
+            "Finish or stop the current response before changing conversations.",
+          );
+      }
+      const conversation: Conversation = existing || {
+        ownerId: agent.ownerId,
+        id,
+        title: "New conversation",
+        channel: "web",
+        createdAt: date(),
+      };
+      // Hermes creates the native session on its first message. Reserving the
+      // id first gives empty conversations history entries without a model call.
+      await repo.saveConversation(conversation);
+      if (agent.mainSessionId !== id) {
+        agent.mainSessionId = id;
+        await repo.saveAgent(agent);
+      }
+      return conversation;
+    });
+  }
+  app.post("/api/sessions", async (req, res) => {
+    const body = z
+      .object({ id: remoteId, expectedSessionId: remoteId.optional() })
+      .strict()
+      .parse(req.body);
+    const session = await selectWebSession(
+      req,
+      body.id,
+      true,
+      body.expectedSessionId,
+    );
+    res.status(201).json({ session });
+  });
+  app.post("/api/sessions/:id/activate", async (req, res) => {
+    const body = z
+      .object({ expectedSessionId: remoteId.optional() })
+      .strict()
+      .parse(req.body);
+    res.json({
+      session: await selectWebSession(
+        req,
+        remoteId.parse(req.params.id),
+        false,
+        body.expectedSessionId,
+      ),
+    });
   });
   app.get("/api/sessions/:id", async (req, res) => {
     const agent = await ready(req);
@@ -726,13 +794,18 @@ export function createApp(dep: Dependencies) {
         if (event.event === "response.created") {
           const id = String(event.data.session_id);
           remoteId.parse(id);
-          await repo.saveConversation({
-            ownerId: agent.ownerId,
-            id,
-            title: "Your conversation",
-            channel: "web",
-            createdAt: date(),
-          });
+          if (
+            !(await repo.conversations(agent.ownerId)).some(
+              (row) => row.id === id,
+            )
+          )
+            await repo.saveConversation({
+              ownerId: agent.ownerId,
+              id,
+              title: "Your conversation",
+              channel: "web",
+              createdAt: date(),
+            });
         }
         if (!disconnected)
           res.write(
@@ -761,6 +834,7 @@ export function createApp(dep: Dependencies) {
           .default([]),
         takeover: z.boolean().optional(),
         notificationId: uuid.optional(),
+        sessionId: remoteId.optional(),
       })
       .parse(req.body);
     if (!body.input && !body.files.length)
@@ -786,6 +860,12 @@ export function createApp(dep: Dependencies) {
     }
     const upstream = await repo.locked(agent.ownerId, async () => {
       const current = await ready(req);
+      if (body.sessionId && body.sessionId !== current.mainSessionId)
+        throw new HttpError(
+          409,
+          "conversation_changed",
+          "Your conversation changed in another tab. Reload before sending this message.",
+        );
       const files = [];
       for (const path of body.files) {
         const file = await a37.statFile(current.instanceId, path);
@@ -797,16 +877,22 @@ export function createApp(dep: Dependencies) {
           );
         files.push(file);
       }
-      if (current.mainSessionId)
-        context.push(
-          `Current web conversation id: ${current.mainSessionId}. When saving or linking tasks with workspace.mjs, pass --session-id ${current.mainSessionId}. For work involving an existing task, use workspace.mjs list, history TASK_ID, and link TASK_ID to retrieve context across its conversations and associate this one.`,
-        );
       const message =
         (body.input || "I’ve uploaded these files.") +
         (files.length ? fileAttachmentText(current.instanceId, files) : "");
       const input = context.length
         ? `App context (from Boundless):\n${context.join("\n")}\nEnd of app context.\n\n${message}`
         : message;
+      const conversation = (await repo.conversations(current.ownerId)).find(
+        (row) => row.id === current.mainSessionId,
+      );
+      if (conversation?.title === "New conversation")
+        await repo.saveConversation({
+          ...conversation,
+          title: (body.input || files[0]?.name || "Your conversation")
+            .replace(/\s+/g, " ")
+            .slice(0, 80),
+        });
       return a37.responses(current.instanceId, {
         input,
         session_id: current.mainSessionId,
@@ -854,12 +940,13 @@ export function createApp(dep: Dependencies) {
           "agent_not_ready",
           "The computer is not ready.",
         );
-      if (computerBusy(agent))
+      if (computerOperationPending(agent))
         await queue.recover?.(agent.ownerId).catch(() => {});
       const instance = await a37.instance(agent.instanceId);
       const {
         bootBefore: _boot,
         acknowledged: _ack,
+        backupsBefore: _backups,
         ...operation
       } = agent.computerOperation || {};
       res.json({
@@ -889,7 +976,7 @@ export function createApp(dep: Dependencies) {
           "agent_not_ready",
           "The computer is not available for maintenance.",
         );
-      if (computerBusy(agent)) {
+      if (computerOperationPending(agent)) {
         if (agent.computerOperation?.action !== action)
           throw new HttpError(
             409,
@@ -898,6 +985,12 @@ export function createApp(dep: Dependencies) {
           );
         return;
       }
+      if (computerBusy(agent))
+        throw new HttpError(
+          409,
+          "restore_not_reconnected",
+          "Finish reconnecting your companion in Checkpoints before restarting or updating.",
+        );
       if (
         agent.mainSessionId &&
         (await a37.session(agent.instanceId!, agent.mainSessionId))
@@ -1047,7 +1140,7 @@ export function createApp(dep: Dependencies) {
       );
     const cron = await a37.createCron(agent.instanceId, {
       name: body.name,
-      prompt: `${body.prompt}\nIf there is useful news, notify the owner via Inkbox and mirror it with node ~/.boundless/workspace.mjs notify.`,
+      prompt: body.prompt + routineNotificationSuffix,
       schedule,
       timezone: profile.timezone,
       agent: "hermes",
@@ -1056,14 +1149,32 @@ export function createApp(dep: Dependencies) {
   });
   app.patch("/api/routines/:id", async (req, res) => {
     const agent = await ready(req);
-    const body = z.object({ enabled: z.boolean() }).parse(req.body);
-    res.json({
-      routine: await a37.patchCron(
-        agent.instanceId,
-        cronId.parse(req.params.id),
-        body,
-      ),
+    const body = routinePatchSchema.parse(req.body);
+    const id = cronId.parse(req.params.id);
+    const routine = await repo.locked(agent.ownerId, async () => {
+      const own = await ready(req);
+      const current = (await a37.crons(own.instanceId)).find(
+        (row) => row.id === id,
+      );
+      if (!current)
+        throw new HttpError(
+          404,
+          "not_found",
+          "This routine couldn’t be found.",
+        );
+      if ("agent" in body || "profile" in body) {
+        const next = { ...current, ...body };
+        if (next.profile && next.agent && next.agent !== "hermes")
+          throw new HttpError(
+            400,
+            "invalid_request",
+            "Profiles work with Hermes. Clear the profile to choose another agent.",
+          );
+      }
+      // Forward only supplied keys: schedule, timezone and enabled reset next_run upstream.
+      return a37.patchCron(own.instanceId, id, body);
     });
+    res.json({ routine });
   });
   app.delete("/api/routines/:id", async (req, res) => {
     const agent = await ready(req);
@@ -1301,15 +1412,13 @@ export function createApp(dep: Dependencies) {
     ) => {
       if (res.headersSent) return res.end();
       if (error?.type === "entity.too.large")
-        return res
-          .status(413)
-          .json({
-            error: {
-              code: "payload_too_large",
-              message:
-                "This request is too large. Upload file pieces of at most 2 MiB.",
-            },
-          });
+        return res.status(413).json({
+          error: {
+            code: "payload_too_large",
+            message:
+              "This request is too large. Upload file pieces of at most 2 MiB.",
+          },
+        });
       if (error instanceof z.ZodError)
         return res.status(400).json({
           error: {

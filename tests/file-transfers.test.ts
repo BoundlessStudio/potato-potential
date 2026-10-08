@@ -20,6 +20,7 @@ import { createApp } from "../services/control-plane/src/app";
 import { HttpError } from "../services/control-plane/src/security";
 import { Agent37 } from "../services/control-plane/src/providers";
 import { prepareExpressRequest } from "../apps/web/src/server/express-request";
+import { gunzipSync } from "node:zlib";
 let server: Server,
   base: string,
   repo: MemoryRepository,
@@ -90,6 +91,206 @@ const call = (path: string, method = "GET", body?: unknown, key = "demo") =>
         }
       : {}),
   });
+it("browses persistent files and previews through the owner’s current computer", async () => {
+  await provider.writeBinary(
+    instance,
+    "/home/node/outputs/客户.txt",
+    Buffer.from("A private output"),
+  );
+  const query = new URLSearchParams({ instance, path: "~/outputs" });
+  const listing = await (await call(`/files/list?${query}`)).json();
+  expect(listing.path).toBe("/home/node/outputs");
+  expect(listing.entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: "客户.txt", type: "file", size: 16 }),
+    ]),
+  );
+  const preview = await call(
+    `/files/preview?${new URLSearchParams({ instance, path: "/home/node/outputs/客户.txt" })}`,
+  );
+  expect(preview.status).toBe(200);
+  expect(preview.headers.get("content-type")).toContain(
+    "application/octet-stream",
+  );
+  expect(preview.headers.get("content-disposition")).toBe("attachment");
+  expect(await preview.text()).toBe("A private output");
+  for (const endpoint of ["list", "preview"]) {
+    expect(
+      (await call(`/files/${endpoint}?${query}`, "GET", undefined, "wrong"))
+        .status,
+    ).toBe(401);
+    expect(
+      (await call(`/files/${endpoint}?${query}`, "GET", undefined, "demo-new"))
+        .status,
+    ).toBe(404);
+    expect(
+      (
+        await call(
+          `/files/${endpoint}?${new URLSearchParams({ instance, path: "/etc" })}`,
+        )
+      ).status,
+    ).toBe(400);
+  }
+});
+it("creates folders, rejects colliding or stale renames, and deletes only the selected item", async () => {
+  const create = () =>
+    call("/files/entries", "POST", {
+      instance,
+      path: "/home/node/outputs",
+      action: "create",
+      name: "Research",
+    });
+  expect((await create()).status).toBe(200);
+  expect((await create()).status).toBe(200);
+  const first = await provider.writeBinary(
+    instance,
+    "/home/node/outputs/first.txt",
+    Buffer.from("keep first"),
+  );
+  await provider.writeBinary(
+    instance,
+    "/home/node/outputs/second.txt",
+    Buffer.from("keep second"),
+  );
+  const rename = {
+    instance,
+    path: first.path,
+    action: "rename",
+    name: "second.txt",
+    modified: first.modified,
+  };
+  expect((await call("/files/entries", "POST", rename)).status).toBe(409);
+  expect(
+    (await call("/files/entries", "POST", { ...rename, name: "first.txt" }))
+      .status,
+  ).toBe(200);
+  expect(await (await provider.downloadFile(instance, first.path)).text()).toBe(
+    "keep first",
+  );
+  expect(
+    (
+      await call("/files/entries", "POST", {
+        ...rename,
+        name: "new.txt",
+        modified: first.modified - 1,
+      })
+    ).status,
+  ).toBe(412);
+  expect(
+    (await call("/files/entries", "POST", { ...rename, name: "new.txt" }))
+      .status,
+  ).toBe(200);
+  const saved = await provider.statFile(instance, "/home/node/outputs/new.txt");
+  expect(
+    (
+      await call("/files/entries", "POST", {
+        instance,
+        path: saved.path,
+        action: "delete",
+        modified: saved.modified,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    await (
+      await provider.downloadFile(instance, "/home/node/outputs/second.txt")
+    ).text(),
+  ).toBe("keep second");
+  expect(
+    (
+      await call("/files/entries", "POST", {
+        instance,
+        path: "/home/node",
+        action: "delete",
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await call("/files/entries", "POST", {
+        instance,
+        path: "/home/node/.boundless",
+        action: "delete",
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (await call("/files/entries", "POST", { ...rename, name: "../../escape" }))
+      .status,
+  ).toBe(400);
+  expect(
+    (await call("/files/entries", "POST", { ...rename, name: "   " })).status,
+  ).toBe(400);
+});
+it("keeps browser uploads separate from chat and protects folders with unfinished uploads", async () => {
+  const body = {
+    id: randomUUID(),
+    purpose: "files",
+    name: "upload.txt",
+    directory: "/home/node/outputs",
+    size: 4,
+    sha256: digest(Buffer.from("data")),
+  };
+  const response = await call("/files/uploads", "POST", body);
+  expect(response.status).toBe(200);
+  expect((await response.json()).upload.purpose).toBe("files");
+  expect(
+    (await call("/files/uploads", "POST", { ...body, purpose: "chat" })).status,
+  ).toBe(409);
+  expect(
+    (
+      await call("/files/entries", "POST", {
+        instance,
+        path: "/home/node/outputs",
+        action: "delete",
+      })
+    ).status,
+  ).toBe(409);
+  await call(`/files/uploads/${body.id}`, "DELETE");
+  expect(
+    (
+      await call("/files/entries", "POST", {
+        instance,
+        path: "/home/node/outputs",
+        action: "rename",
+        name: "Saved outputs",
+      })
+    ).status,
+  ).toBe(200);
+});
+it("streams folders as authenticated archives and bounds preview sizes", async () => {
+  const path = "/home/node/outputs";
+  await provider.writeBinary(
+    instance,
+    path + "/archive.txt",
+    Buffer.from("archive contents"),
+  );
+  const response = await call(
+    `/files/content?${new URLSearchParams({ instance, path, archive: "1" })}`,
+  );
+  expect(response.status).toBe(200);
+  expect(response.headers.get("content-type")).toContain("application/gzip");
+  expect(response.headers.get("content-disposition")).toContain(
+    "outputs.tar.gz",
+  );
+  expect(
+    gunzipSync(Buffer.from(await response.arrayBuffer())).toString(),
+  ).toContain("archive contents");
+  const stat = provider.statFile.bind(provider);
+  vi.spyOn(provider, "statFile").mockImplementation(async (id, path) => ({
+    ...(await stat(id, path)),
+    size: 20_000_001,
+  }));
+  const download = vi.spyOn(provider, "downloadFile");
+  expect(
+    (
+      await call(
+        `/files/preview?${new URLSearchParams({ instance, path: path + "/archive.txt" })}`,
+      )
+    ).status,
+  ).toBe(413);
+  expect(download).not.toHaveBeenCalled();
+});
 it("defaults uploads to the uploads folder and attaches the exact saved path to the native turn", async () => {
   const response = await call("/files/uploads", "POST", {
     id: randomUUID(),

@@ -82,7 +82,28 @@ beforeAll(async () => {
     ),
   );
   await db.exec(
-    await readFile("supabase/migrations/20261007034424_file_uploads.sql", "utf8"),
+    await readFile(
+      "supabase/migrations/20261007034424_file_uploads.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      "supabase/migrations/20261007135706_account_beta_cleanup.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      "supabase/migrations/20261007151028_account_email_ownership.sql",
+      "utf8",
+    ),
+  );
+  await db.exec(
+    await readFile(
+      "supabase/migrations/20261008120000_remove_task_session_links.sql",
+      "utf8",
+    ),
   );
   await db.exec(
     `insert into auth.users(id) values ('${a}'),('${b}'); insert into public.customers(id,email,profile) values ('${a}','a@example.com','{}'),('${b}','b@example.com','{}'); insert into public.agents(owner_id,state) values ('${a}','{"secret":"hidden"}'),('${b}','{}'); insert into public.workspace_items(id,owner_id,kind,item) values ('33333333-3333-4333-8333-333333333333','${a}','wiki','{"title":"A wiki"}'),('44444444-4444-4444-8444-444444444444','${b}','task','{"title":"B task"}');`,
@@ -90,6 +111,153 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await db.close();
+});
+it("removes legacy task session links without changing work details or conversation histories", async () => {
+  await db.exec("begin");
+  try {
+    for (const kind of ["task", "responsibility", "wiki"]) {
+      await db.query(
+        "insert into public.workspace_items(id,owner_id,kind,item) values($1,$2,$3,$4)",
+        [
+          randomUUID(),
+          a,
+          kind,
+          JSON.stringify({
+            title: "Keep this work",
+            body: "Budget agreed; waiting for dates. Output: ~/outputs/report.md",
+            status: "needs_you",
+            createdAt: "2026-10-01T12:00:00.000Z",
+            updatedAt: "2026-10-07T12:00:00.000Z",
+            metadata: { decision: "Use the agreed budget" },
+            sessionLinks: [
+              { sessionId: "legacy-session", instanceId: "oldagent01" },
+            ],
+          }),
+        ],
+      );
+    }
+    await db.query(
+      "insert into public.conversations(owner_id,session_id,conversation) values($1,$2,$3)",
+      [a, "legacy-session", JSON.stringify({ title: "Keep this history" })],
+    );
+    const before = await db.query<{
+      id: string;
+      kind: string;
+      item: Record<string, unknown>;
+      updated_at: string;
+    }>("select * from public.workspace_items order by id");
+    const histories = await db.query(
+      "select * from public.conversations order by session_id",
+    );
+    const migration = await readFile(
+      "supabase/migrations/20261008120000_remove_task_session_links.sql",
+      "utf8",
+    );
+    await db.exec(migration);
+    const expected = before.rows.map((row) => {
+      const item = { ...row.item };
+      if (["task", "responsibility"].includes(row.kind))
+        delete item.sessionLinks;
+      return { ...row, item };
+    });
+    expect(
+      (await db.query("select * from public.workspace_items order by id")).rows,
+    ).toEqual(expected);
+    expect(
+      (await db.query("select * from public.conversations order by session_id"))
+        .rows,
+    ).toEqual(histories.rows);
+    await db.exec(migration);
+    expect(
+      (await db.query("select * from public.workspace_items order by id")).rows,
+    ).toEqual(expected);
+  } finally {
+    await db.exec("rollback");
+  }
+});
+it("retains the new owner's beta access when closing an account whose former email has been reused", async () => {
+  const oldOwner = randomUUID(),
+    newOwner = randomUUID();
+  await db.exec("begin");
+  try {
+    await db.query(
+      "insert into auth.users(id,email) values($1,'changed@example.com'),($2,'reused@example.com')",
+      [oldOwner, newOwner],
+    );
+    await db.query(
+      "insert into public.customers(id,email,profile) values($1,'reused@example.com','{}'),($2,'reused@example.com','{}')",
+      [oldOwner, newOwner],
+    );
+    await db.query(
+      "insert into public.invitations(email,token_hash,used_by,expires_at) values('reused@example.com','reuse-old',$1,now()+interval '1 day'),('reused@example.com','reuse-new',$2,now()+interval '1 day'),('reused@example.com','reuse-pending',null,now()+interval '1 day')",
+      [oldOwner, newOwner],
+    );
+    await db.exec(
+      "insert into public.beta_requests(email) values('reused@example.com'),('changed@example.com')",
+    );
+    await db.query("delete from auth.users where id=$1", [oldOwner]);
+    expect(
+      (
+        await db.query(
+          "select email from public.beta_requests where email in ('reused@example.com','changed@example.com') order by email",
+        )
+      ).rows,
+    ).toEqual([{ email: "reused@example.com" }]);
+    expect(
+      (
+        await db.query(
+          "select token_hash from public.invitations where token_hash like 'reuse-%' order by token_hash",
+        )
+      ).rows,
+    ).toEqual([{ token_hash: "reuse-new" }, { token_hash: "reuse-pending" }]);
+    expect(
+      (
+        await db.query("select id from public.customers where id=$1", [
+          newOwner,
+        ])
+      ).rows,
+    ).toEqual([{ id: newOwner }]);
+  } finally {
+    await db.exec("rollback");
+  }
+});
+it("revokes unused invitations for an unshared historical email when closing its former owner", async () => {
+  const owner = randomUUID();
+  await db.exec("begin");
+  try {
+    await db.query(
+      "insert into auth.users(id,email) values($1,'current-address@example.com')",
+      [owner],
+    );
+    await db.query(
+      "insert into public.customers(id,email,profile) values($1,'current-address@example.com','{}')",
+      [owner],
+    );
+    await db.query(
+      "insert into public.invitations(email,token_hash,used_by,expires_at) values('former-address@example.com','historical-used',$1,now()+interval '1 day'),('former-address@example.com','historical-pending',null,now()+interval '1 day')",
+      [owner],
+    );
+    await db.exec(
+      "insert into public.beta_requests(email) values('former-address@example.com')",
+    );
+    await db.query("delete from auth.users where id=$1", [owner]);
+    expect(
+      (
+        await db.query(
+          "select * from public.beta_requests where email='former-address@example.com'",
+        )
+      ).rows,
+    ).toEqual([]);
+    expect(
+      (
+        await db.query(
+          "select * from public.invitations where token_hash like 'historical-%'",
+        )
+      ).rows,
+    ).toEqual([]);
+  } finally {
+    await db.exec("rollback");
+  }
 });
 it("keeps upload records service-only, binds ownership immutably and cascades account removal", async () => {
   const owner = randomUUID(),
@@ -490,9 +658,10 @@ it("guards Auth deletion until provider cleanup and erases only the closing acco
     select public.claim_customer_lease('${owner}',gen_random_uuid());
     insert into public.invitations(email,token_hash,used_by,expires_at) values
       ('profile-close@example.com','close-consumed','${owner}',now()+interval '1 day'),
+      ('old-close@example.com','close-old-email','${owner}',now()+interval '1 day'),
       ('auth-close@example.com','close-pending',null,now()+interval '1 day');
     insert into public.beta_requests(email) values
-      ('profile-close@example.com'),('auth-close@example.com'),('someone-else@example.com');
+      ('profile-close@example.com'),('auth-close@example.com'),('old-close@example.com'),('someone-else@example.com');
     insert into public.invitations(email,token_hash,used_by,expires_at) values
       ('b@example.com','other-pending',null,now()+interval '1 day'),
       ('b@example.com','other-consumed','${b}',now()+interval '1 day');
@@ -571,12 +740,15 @@ it("guards Auth deletion until provider cleanup and erases only the closing acco
   ).rejects.toThrow("provider cleanup must complete");
   expect(await counts()).toEqual(before);
   expect(
+    (await db.query("select * from public.beta_requests order by email")).rows,
+  ).toEqual(allBetaBefore);
+  expect(
     (
       await db.query(
         "select * from public.invitations where token_hash like 'close-%'",
       )
     ).rows,
-  ).toHaveLength(2);
+  ).toHaveLength(3);
   await db.exec(
     `update public.agents set state='{"status":"deleting","deletion":{"instance":true,"identity":true}}' where owner_id='${owner}'`,
   );
@@ -584,12 +756,15 @@ it("guards Auth deletion until provider cleanup and erases only the closing acco
   await db.exec(`begin; delete from auth.users where id='${owner}'; rollback;`);
   expect(await counts()).toEqual(before);
   expect(
+    (await db.query("select * from public.beta_requests order by email")).rows,
+  ).toEqual(allBetaBefore);
+  expect(
     (
       await db.query(
         "select * from public.invitations where token_hash like 'close-%'",
       )
     ).rows,
-  ).toHaveLength(2);
+  ).toHaveLength(3);
   await db.exec(`delete from auth.users where id='${owner}'`);
   expect(await counts()).toEqual(ownedTables.map(() => 0));
   expect(
@@ -602,10 +777,10 @@ it("guards Auth deletion until provider cleanup and erases only the closing acco
   expect(
     (
       await db.query(
-        "select * from public.beta_requests where email in ('profile-close@example.com','auth-close@example.com')",
+        "select * from public.beta_requests where email in ('profile-close@example.com','auth-close@example.com','old-close@example.com')",
       )
     ).rows,
-  ).toHaveLength(2);
+  ).toHaveLength(0);
   expect(
     (
       await db.query(
@@ -615,7 +790,14 @@ it("guards Auth deletion until provider cleanup and erases only the closing acco
   ).toEqual([{ email: "someone-else@example.com" }]);
   expect(
     (await db.query("select * from public.beta_requests order by email")).rows,
-  ).toEqual(allBetaBefore);
+  ).toEqual(
+    allBetaBefore.filter(
+      (row) =>
+        row.email !== "profile-close@example.com" &&
+        row.email !== "auth-close@example.com" &&
+        row.email !== "old-close@example.com",
+    ),
+  );
   expect(
     (await db.query(`select * from public.customers where id='${b}'`)).rows,
   ).toHaveLength(1);

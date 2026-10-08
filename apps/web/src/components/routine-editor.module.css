@@ -1,0 +1,56 @@
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.toggle input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin-top: 3px;
+  accent-color: var(--purple);
+}
+.toggle small {
+  margin-top: 2px;
+}
+.more {
+  align-self: flex-start;
+}
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  background: #faf7fd;
+  border: 1px solid #eee5f5;
+  border-radius: 12px;
+}
+.choices p,
+.error {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.choices p {
+  color: var(--muted);
+}
+.error {
+  color: #a44e59;
+}
+.actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .actions > button {
+    flex: 1 1 100%;
+  }
+}

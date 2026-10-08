@@ -5,14 +5,15 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_6kcZcHyqwrHm6q71ud1oxzgsn3qG",
-    "deploymentUrl": "https://potato-potential-3owgnvyic-venatio-studios.vercel.app",
+    "deploymentId": "dpl_9Bb36t7bpP9aVTcBnuwQr8KUxRN5",
+    "deploymentUrl": "https://potato-potential-j5yoe0753-venatio-studios.vercel.app",
     "sourceCommit": null,
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow",
-    "sourceCheckoutCommit": "2a00a0e6699e6ffda73ab9ec28e421e8da320222",
-    "source": "Local working tree deployed with Vercel CLI"
+    "sourceCheckoutCommit": "3696565449faf8635c64966cea49461d71d0b6da",
+    "source": "Verified production application snapshot with the Inkbox shared-contact routing fix. The source hash identifies the exact uploaded inputs; application source and regression tests are synchronized to GitHub in this release.",
+    "sourceHash": "7f0b8e40898af77cf78dddad5a878d862821235a95786f9812c7e6f358d3e8f0"
   },
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
@@ -25,7 +26,9 @@
       "20261006182258",
       "20261006205152",
       "20261006205153",
-      "20261007034424"
+      "20261007034424",
+      "20261007135706",
+      "20261007151028"
     ],
     "siteUrl": "https://potato-potential.rgbknights.com",
     "redirectUrl": "https://potato-potential.rgbknights.com/auth/callback"
@@ -49,14 +52,14 @@
     "port": 587,
     "security": "STARTTLS"
   },
-  "validatedOn": "2026-10-07",
+  "validatedOn": "2026-10-08",
   "validation": {
     "authEmailAppearance": "Magic link or OTP and Confirm sign up updated through the authenticated Supabase dashboard to use the existing transparent public wordmark and #9574ED action button, with inline/bgcolor and stylesheet colors aligned. Both exact HTML sources verified after reload; native ConfirmationURL and Email placeholders retained. Published logo bytes match local artwork and contain transparent pixels. Desktop, 390px, 320px and inline-style previews verified button color, logo loading, readable text, touch target and no horizontal overflow. No recipient emails sent; no web deployment required.",
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 170,
-    "mockBrowserTests": 39,
-    "githubChecks": "Earlier committed releases passed GitHub CI; this local working-tree release passed local typecheck, tests, browser checks and build plus the Vercel production build.",
+    "unitAdapterDatabaseTests": 378,
+    "mockBrowserTests": 117,
+    "githubChecks": "The release passed local typecheck, 378 unit/API/database tests, all 117 browser tests, local and Vercel production builds, and candidate/custom-domain browser checks. GitHub Actions validates the pushed source.",
     "securityRecovery": "Migration 202610060001 applied and recorded before the app release. Custom domain resolves to the recorded deployment. GitHub CI passed 89 unit/adapter/database tests, 25 browser tests, typecheck and production build. Live checks verified server-only invitation RPC privileges, invalid acceptance rollback, retry preservation of edited profiles, operator-only endpoints, consumed-token denial after account deletion and fresh invitation acceptance for a new account with the same email. Public beta signup remains normalized and deduplicated without enrolling a customer. Temporary Auth/customer/invitation/beta fixtures removed; no external email or provider computer created. Pause/resume recovery, phone-code locking, onboarding freezing, cold-wake allowance, delayed takeover and signing-key reuse were checked with mocked providers. No desktop image update required.",
     "dependencyAudit": "Production dependencies: zero known vulnerabilities. Full dependency audit flags the development-only concurrently/shell-quote chain under GHSA-pqg4-j6r4-53mv; upgrading shell-quote to 1.11.0 is a separate follow-up.",
     "bigPossibilities": "published after Little possibilities and before the FAQ; Agent37/Hermes computer and multi-tool work, Brave search, Composio connections, image-dependent Perflo paid tools and Inkbox channels explained with seven native technical disclosures; scheduling explanations retained in Little possibilities; keyboard interaction, no-JavaScript disclosures, reduced motion and local 320/390/768/1024/1440 layouts passed; published desktop/390/320 views and all disclosures verified with no page errors, clipped content or application mutations; footer beta CTA, canonical metadata, crawler content, social image and public asset secret checks passed",
@@ -75,9 +78,9 @@
     "invitationAuthority": "Independent BETA_ACCESS_TOKEN credential; ordinary user and operator sessions grant no beta review access.",
     "invitationPage": "Public /beta shell with a secret-protected searchable request list; excluded from navigation and sitemap.",
     "invitationEmail": "Resend key and factory.rgbknights.com sender verified; transport and failure handling mocked; recipient delivery pending first operator send",
-    "betaSignup": "Normalized unique email primary key; independent records survive account closure. Migration 20261006205152 applied before rollout.",
-    "betaApproval": "Secret-protected approval checks every Auth page before inviting; active invitations and existing users are not invited twice. Transport/retry cases passed unit/database/browser checks; live token guard and server-only privileges verified.",
-    "passwordlessSignIn": "dedicated /signin page uses Supabase email magic links and the existing PKCE callback; published desktop/mobile pages and native OTP request checked with transport intercepted; verified email invitation claim passed live without browser invitation storage",
+    "betaSignup": "Normalized unique email primary key; beta requests are independent of Auth until approval and acceptance. Closing an accepted account now removes its beta entry through the protected Auth erasure trigger. Migration 20261007135706 applied before release.",
+    "betaApproval": "Token-protected approval checks all Auth pages and treats only enrolled accounts or consumed invitations as accepted. Unapproved Auth-only records remain reviewable and removable. Active invitation delivery is deduplicated; provider failures retain retryable records.",
+    "passwordlessSignIn": "The /signin page checks POST /api/auth/signin before any email. Unapproved emails are rejected. Approved unconfirmed users are prepared without email confirmation, receive a service-generated admin invite link through Resend, and redeem its single-use token at /auth/callback with verifyOtp. The callback stores the verified session cookie; the API returns no Auth credential and creates no customer profile or agent. Already confirmed users keep browser OTP with shouldCreateUser=false and the PKCE callback. Public Auth signup remains disabled.",
     "publicHomepage": "warm paper-and-sticker design with supplied mascot crew, interactive task/wiki/routine examples, computer and connection illustrations and native expandable FAQs; local visual checks at 320, 390, 768, 1024 and 1440 pixels; keyboard skip link, example selection, invalid email, reduced motion and signup/sign-in regressions passed; fresh anonymous production desktop/mobile verification passed with no page errors or horizontal overflow; beta submission transport intercepted without sending a real signup or email; canonical metadata, crawler-visible content, social card and public asset secret checks retained",
     "loadingScreen": "Centered Potato Potential wordmark with Loading ... beneath it during the browser account check. Responsive logo sizing and server-rendered public homepage retained. Three homepage browser checks, typecheck, local and Vercel production builds passed. Published 1280/390/320px layouts verified exact text, loaded logo, centering, placement below the image and account-check completion with no overflow or runtime errors using isolated intercepted account fixtures; zero application mutations.",
     "appsCatalog": "live owner catalog: first 24, next 24, Gmail search and connections passed; adapter normalizes Agent37 items; browser retry and stale-page checks passed",
@@ -94,7 +97,7 @@
     "homepageSections": "Tasks, Wiki and Routines visible together; Brave, Composio, Perflo and Inkbox details expanded; Venatio Studios 2026 footer links to studio. Local landing/browser checks and current custom-domain HTML verified.",
     "computerFrame": "Consistent desktop/mobile card insets, one outer outline and wrapped long names. Interactive desktop/mobile/320px/Chat preview, control-cycle and unavailable-state checks passed; eight Computer browser regressions passed. Vercel production build and custom-domain styles verified.",
     "computerNavigation": "Computer moved from the main navigation list to the lower sidebar directly above Settings. Desktop/mobile visual and navigation checks, eight Computer browser regressions and Vercel production build passed; current custom-domain bundle order verified.",
-    "computerResources": "Resource usage placed in the right-hand column beneath PC controls; CPU, Memory and Disk stack vertically with compact charts. Desktop/mobile placement, sampling and refresh checks, eight Computer browser regressions and Vercel production build passed. Current custom-domain layout and lower Computer navigation verified.",
+    "computerResources": "Resource usage now has its own Computer tab with CPU, memory and disk charts across the content width on desktop and stacked on mobile. Overview retains desktop and maintenance controls; Requests & services contains publication approvals and registered services. Request notifications select Requests & services directly. Local browser and published 1280px/320px UI checks passed.",
     "sidebarNoteRemoval": "Selected sidebar tagline and sparkle removed with unused CSS. Formatting and Vercel production build passed; current custom-domain browser assets omit the removed markup/styles and retain Computer above Settings. Production health passed.",
     "chatFiles": "Migration 20261007034424 applied before API deployment; service-only grants, immutable bindings and account cascade verified. Immediate chat uploads up to 100 MB use 2 MiB sized pieces and a SHA-256-verifying atomic helper. Exact returned paths forwarded unchanged in native files; acceptance clears pending attachments. Retry/reload/cancellation recovery, multiple files, files-only turns, removed/missing attachments, binary/Unicode/empty/collision cases, boundary, disk exhaustion, path/symlink escapes, ownership and lifecycle checks covered. 197 unit/API/database tests, 45 browser tests, typecheck and production builds passed. A 6 MB production transfer round-tripped through Vercel with bearer and verified Supabase-cookie downloads, idempotent completion and sign-in return URLs; file/helper persisted after restart and template update. Empty upload to /home/linuxbrew passed. Existing ready computer received versioned helper/instructions through production reconciliation; native persona, callback and instance preserved. All disposable computers/Auth customers/uploads/agent bindings/jobs removed. Catch-all route renamed to avoid Vercel path-query collisions.",
     "chatUploadFolders": "Read-only destination opens a folder picker on the current owned remote computer. Default /home/node/ is shared by browser/API and versioned agent instructions. Native directory listings restricted to /home/node and /home/linuxbrew, with directory/symlink/ancestor checks, owner and lifecycle guards, no caching, breadcrumbs, parent navigation, filtering, hidden folders, retry/cancellation and keyboard focus. 201 unit/API/database tests, 47 browser tests, typecheck, local and Vercel production builds passed. Live native listings verified on both persistent roots; published desktop/320px UI verified using an isolated browser account fixture with live read-only remote folder metadata and zero application mutations. Unauthenticated production directory endpoint returned 401. Version 2 instructions reconciled on one existing ready computer; native persona, callback and instance preserved. No database migration required.",
@@ -104,7 +107,465 @@
     "uploadHomeDefault": "Removed Linuxbrew from the folder picker, retained Home navigation to /home/node and set the shared browser/API default to /home/node/uploads/. Setup and version 3 reconciliation prepare that folder and update agent instructions. Eight file-transfer browser checks, 46 related API/adapter/helper tests, typecheck, local and Vercel production builds passed. Published desktop/320px views verified the default, sole Home option, parent navigation, custom selection, Escape focus and directory authentication with live read-only remote listings and zero application mutations. One ready computer reconciled; default folder verified and native persona, callback and instance preserved.",
     "composerAttachmentToggle": "Upload controls, destination and size guidance start collapsed behind an accessible paperclip toggle in the composer's bottom action row, below the message input. Pending files, progress, retry and removal stay visible when collapsed; drop/paste works without opening controls. Seventeen workspace/file-transfer browser checks, typecheck, local and Vercel production builds passed. Published desktop/320px views verified collapsed and expanded layouts, bottom placement, keyboard toggling, draft retention, custom folder selection, Escape focus and no overflow/runtime errors with live read-only folder metadata and zero application mutations.",
     "composerInlineUploads": "Expanded upload button and destination selector share the bottom row with the paperclip and send/stop buttons. Removed the helper text and 100 MB/drop/paste guidance; upload labels become compact icons on mobile. Pending attachments remain above the toolbar. Seventeen workspace/file-transfer browser checks, typecheck, local and Vercel production builds passed. Published desktop/320px alignment, collapsed/expanded views, keyboard toggling, draft retention, Home/default uploads, live read-only remote folder selection, Escape focus and directory authentication verified with no overflow/runtime errors or application mutations.",
-    "chatComputerPanel": "Computer preview button moved from the main chat header to the top right of the companion panel; conversation history remains in the chat header. Preview and close controls stay inside the panel, and the existing Computer navigation provides mobile access. Seventeen workspace/Computer browser checks, typecheck, local and Vercel production builds passed. Published 1280/1120/390/320px views verified panel placement, preview opening/closing, draft retention, mobile navigation, channels/notifications and keyboard focus with no clipping, horizontal overflow or runtime errors using isolated intercepted account fixtures; zero application mutations."
+    "chatComputerPanel": "Computer preview button moved from the main chat header to the top right of the companion panel; conversation history remains in the chat header. Preview and close controls stay inside the panel, and the existing Computer navigation provides mobile access. Seventeen workspace/Computer browser checks, typecheck, local and Vercel production builds passed. Published 1280/1120/390/320px views verified panel placement, preview opening/closing, draft retention, mobile navigation, channels/notifications and keyboard focus with no clipping, horizontal overflow or runtime errors using isolated intercepted account fixtures; zero application mutations.",
+    "betaCleanupRelease": "Production Vercel build passed. Local production build, 233 unit/API/database tests, and targeted 16 browser tests passed. Updated message and migration reconciliation passed targeted API/database checks. Live beta browser removal erased the specified unaccepted Auth-only account and its beta row; Auth, beta, invitations, and customer records were verified absent. Live sign-in UI shows No sign-in email was sent and a Join the beta list link, with zero Auth email requests. Accepted-account closure reuses durable provider cleanup and offers confirmation, progress refresh, and retry.",
+    "firstInviteSignIn": "Fixed public OTP treating unconfirmed existing Auth users as new signups. Local typecheck, production build, 244 unit/API/database tests and six relevant browser checks passed; Vercel production build passed. A disposable unverified account exercised first sign-in and retry through the actual service route using live Supabase with mail intercepted. Its address stayed unverified until the deployed custom-domain callback redeemed the token and stored a session cookie; replay was rejected, and subsequent sign-in selected the existing verified-user OTP path. Public signup was verified disabled. The published browser bundle includes the emailSent branch and the deployed API still rejects unapproved emails. No recipient emails sent by these checks; disposable Auth fixtures removed. The existing reported beta invitation and its unconfirmed Auth user were retained for the recipient to complete sign-in.",
+    "accountLifecycleAudit": {
+      "date": "2026-10-07T15:57:14.019Z",
+      "report": "infra/account-lifecycle-audit.json",
+      "unitApiDatabaseTests": 267,
+      "browserTests": 29,
+      "typecheck": "passed",
+      "productionBuild": "passed",
+      "knownDependencyVulnerabilities": 0,
+      "liveEvidence": {
+        "capturedAt": "2026-10-07T15:53:36.057Z",
+        "recipientEmailsSent": 0,
+        "providerResourcesCreated": 0,
+        "publishedPreSetupClosureBrowser": "passed",
+        "firstVerificationSessionAndAcceptance": "passed",
+        "deployedPreSetupClosureAndBetaRemoval": "passed",
+        "erasedSessionRejected": true,
+        "closedEmailRequiresNewApproval": true,
+        "cleanupBeforeFirstBrowserStatusRead": "passed",
+        "deployedHistoricalEmailOwnershipGuard": "passed",
+        "disposableFixturesRemoved": true
+      }
+    },
+    "settingsMemory": {
+      "sourceCommit": "a1079f2d7903212bf9d431a2a88b20bce5bb955f",
+      "expandedEditors": [
+        "USER.md",
+        "MEMORY.md",
+        "SOUL.md"
+      ],
+      "placement": "Automatically loaded separate expanded editors below the main Pip settings details; independently saved with modification-time checks.",
+      "contacts": "Read-only agent email and verified phone in Pip card; separate Keep in touch card removed.",
+      "local": {
+        "typecheck": "passed",
+        "productionBuild": "passed",
+        "apiTests": 14,
+        "browserTests": 15,
+        "desktopAndMobile": "passed including 320px card bounds"
+      },
+      "production": {
+        "deployment": "READY and promoted",
+        "customDomain": "HTTP 200 and updated assets confirmed",
+        "health": "healthy; demo false",
+        "unauthenticatedMemoryReadAndWrite": "401"
+      },
+      "github": {
+        "run": "https://github.com/BoundlessStudio/potato-potential/actions/runs/37726323045",
+        "typecheck": "passed",
+        "testsPassed": 203,
+        "testsFailed": 1,
+        "existingFailure": "The same 5 MB file-transfer test failed with ECONNRESET on the previous commit 6ca081f; no settings test failed."
+      },
+      "sectionOrderUpdate": {
+        "sourceCommit": "eafa46f311e67e92ca46650c4f4faba29f5aa3a0",
+        "typecheck": "passed",
+        "browserTests": 2,
+        "desktopAnd320pxMobile": "passed",
+        "productionBuild": "passed",
+        "customDomain": "New deployment and spacing verified"
+      }
+    },
+    "workspaceRouting": "Seven explicit routes: /chat, /tasks, /wiki, /routines, /apps, /computer and /settings. Signed-in / replaces history with /chat; anonymous / retains the homepage. Navigation uses accessible links and Next.js native history integration to preserve draft/upload/stream state. Typecheck, 270 local unit/API/database tests, 78 local browser tests, and local/Vercel production builds passed. Published custom-domain HTTP routes and isolated intercepted account fixtures verified direct loading, refresh, Back/Forward, draft preservation, active links and 390px mobile routing without application mutations. GitHub CI status is tracked separately.",
+    "workspaceRoutingGitHubChecks": {
+      "commit": "41684b013397bb636da541a6d889ba216da16827",
+      "run": "https://github.com/BoundlessStudio/potato-potential/actions/runs/37727802801",
+      "attempts": 2,
+      "typecheck": "passed",
+      "unitTests": "203 passed; unchanged large file-transfer test failed with fetch ECONNRESET on both attempts",
+      "existingFailureConfirmed": "The same test and ECONNRESET failure occurred before routing commit in https://github.com/BoundlessStudio/potato-potential/actions/runs/37726900082",
+      "production": "Local and Vercel production builds and published routing verification passed"
+    },
+    "settingsSoulRemoval": "Removed SOUL editor and its persona read from user Settings; About you and Agent notes remain independently editable. Updated settings description and existing browser checks. Typecheck, both Settings browser tests and Vercel production build passed. Published custom-domain assets verified with isolated account fixtures at 1280px and 320px: exactly two editors, editable drafts, no persona reads, no overflow, no page errors and zero application mutations. GitHub run 37756195699 failed on the previously confirmed unchanged file-transfer ECONNRESET test.",
+    "ownerBudget": {
+      "sourceCommit": "9c4c438fb158e3f8751facc80c53bb2b6eb2b5c7",
+      "behavior": "Settings Budget lets the authenticated instance owner set a USD 0-100 monthly Agent37 managed-services cap and view current consumption, remaining monthly allowance, period and any one-time credit. The cap takes effect immediately; zero removes the monthly allowance while existing one-time credit may remain spendable. Compute, messaging and BYOK costs remain separate.",
+      "providerContract": "https://www.agent37.com/docs/agents-api/budgets",
+      "security": "Owner-only instance binding, strict amount validation, fresh provider comparisons, serialized writes, stale-change rejection and idempotent lost-reply recovery. Cached cap changes only after provider confirmation. Ordinary reads avoid the upload recovery lease.",
+      "local": "Typecheck, 290 unit/API/database tests, 20 focused browser tests and production build passed. Two further budget guard tests were added and all 21 budget tests passed afterward. Desktop and 320px mobile verified, including saved limits, zero, invalid amounts, loading/save failures, stale-change recovery and preservation of unrelated drafts.",
+      "production": "Vercel deployment READY and custom domain alias verified. Published UI tested with isolated intercepted account fixtures; actual anonymous budget GET and PUT return 401. Actual provider read passed for an existing ready instance. Public browser assets contain none of the checked server credentials. No live provider budget changed or application resources created by verification.",
+      "github": "Pushed main. Run https://github.com/BoundlessStudio/potato-potential/actions/runs/37757630999 passed typecheck and budget tests, then failed on the previously confirmed unchanged large file-transfer test with ECONNRESET."
+    },
+    "ownerUsage": {
+      "sourceCommit": "3696565449faf8635c64966cea49461d71d0b6da",
+      "behavior": "Usage section directly below Budget shows the UTC month, managed-service total spending, service calls, total AI tokens, AI input/output token counts and per-service calls/spend for AI models, web search, connected apps and paid tools. Refresh is independent of budget/profile/memory drafts. Empty, loading, retry and stale-after-error states are explicit. Hosting, messaging and own-key usage are excluded and explained.",
+      "providerContract": "https://www.agent37.com/docs/agents-api/budgets",
+      "security": "Authenticated owner-only current instance read; account lifecycle and instance checked before and after the provider call, no client-selected tenant, no account lease or mutations, private no-store response. Validated provider field allowlist excludes unknown fields and rejects invalid periods, amounts and counters.",
+      "local": "Typecheck, 60 related API/adapter tests, 11 Settings browser checks and production build passed. Mobile layout visually verified.",
+      "production": "Vercel READY and custom domain alias verified. Published UI verified with isolated intercepted fixtures at 1280px and 320px, including category breakdown, sub-cent precision, below-Budget placement, refresh, month rollover, empty/error recovery and preservation of other drafts. Actual anonymous usage API returned 401. New adapter validated against a live ready instance using a read-only request. Public asset credential check passed. No real budget or provider resource changed.",
+      "github": "Pushed main. Run https://github.com/BoundlessStudio/potato-potential/actions/runs/37758690249 passed typecheck and 243 unit/API tests, including all usage tests. The previously confirmed unchanged large file-transfer test failed with ECONNRESET."
+    },
+    "computerWorkspaceRelease": {
+      "deploymentId": "dpl_F5QqTg95Wg3jDCvzMEZpR8PnTreo",
+      "behavior": "Computer Files explorer with Outputs, Uploads and Home, breadcrumbs, list/grid views, hidden files, previews, uploads, folder creation, rename/delete, file downloads and folder archives. Four Computer tabs retain file-browser state. Backups deferred.",
+      "local": {
+        "unitApiDatabaseTests": 323,
+        "focusedBrowserTests": 21,
+        "typecheck": "passed",
+        "productionBuild": "passed"
+      },
+      "production": {
+        "vercel": "READY",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "filesApi": "anonymous list, preview and mutation denied with 401",
+        "ui": "Published desktop 1280px and mobile 320px checked with isolated intercepted account fixtures; explorer, preview, tabs, global conversation controls and Channels dialog passed; zero application mutations",
+        "publicAssetCredentialScan": {
+          "assets": 13,
+          "status": "passed"
+        }
+      },
+      "migrations": "No database migration needed or applied for the file explorer and Computer tabs.",
+      "sourceHash": "485646b65b74f0da13434edc75329b3058b386cf4be57de7bf1ed4e381884b5f"
+    },
+    "computerOverviewRelease": {
+      "deploymentId": "dpl_BwKRngdAYUYdBN2rXjHFRwyBWcS7",
+      "sourceHash": "fc14d29ae14b9dedd0449cb167dc07774d26ccef56e77d359767be7343b37f97",
+      "behavior": "Single top-right Refresh computer action reloads status and metrics and connects/reconnects the Overview desktop. Companion artwork, native desktop placeholder, warmer copy, compact resource summary and responsive two-column mobile tabs.",
+      "local": {
+        "focusedBrowserTests": 24,
+        "typecheck": "passed",
+        "productionBuild": "passed"
+      },
+      "production": {
+        "vercel": "READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Published desktop 1280px and mobile 320px verified with isolated intercepted fixtures before promotion and on the custom domain. Unified refresh fetched status and metrics and requested desktop connection, native placeholder and resource summary rendered, Channels messages/calls and global conversation controls passed. No horizontal overflow, runtime errors or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied for this release."
+    },
+    "computerBannerArtwork": {
+      "deploymentId": "dpl_3zuseW2d2PtKktF8qtk2S51iQBtK",
+      "sourceHash": "e088106cd849fd477aaa4c4da19b31d823a963118b0f0fa3336387792390f614",
+      "behavior": "Computer banner uses its own pastel SVG desk illustration with a monitor, plant and warm cup. Existing banner copy, layout and Refresh computer action are retained.",
+      "local": {
+        "typecheck": "passed",
+        "browserAndVisualChecks": "1280px desktop and 320px mobile; no horizontal overflow or browser errors"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "New banner artwork, unified refresh, resource snapshot, desktop placeholder, global conversation controls and Channels messages/calls passed on the protected deployment and custom domain using isolated intercepted fixtures. No application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerOverviewCorrection": {
+      "deploymentId": "dpl_24YkjYqpVSDfyEanECyAoFhF36w3",
+      "sourceHash": "b8e6d467b07c485608c8d7a0c00128fee5758bf1d6e9c40759c3ae245bd83955",
+      "behavior": "Restored the desktop preview sizing used before the Overview redesign: min(65vh, 660px) on desktop, 460px below 900px and 380px below 600px. Removed the Overview resource snapshot; CPU, memory, disk, charts and metric errors remain on the Resource usage tab. The unified refresh and banner illustration are retained.",
+      "local": {
+        "typecheck": "passed",
+        "computerWorkspaceBrowserTests": 9
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px checked on the protected deployment and public custom domain using intercepted account fixtures. Restored preview heights, absence of Overview resources, fresh metrics on Resource usage, unified refresh, banner artwork, Channels and global controls passed. No browser errors or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerVersionStatusIcons": {
+      "deploymentId": "dpl_Eo2tJZyBmr6YBoP6Kt2Q8A7UPwd6",
+      "sourceHash": "3e7ab6267142153dad79f7e9d1bb2bc953d281255273afa442aeff38806df2ca",
+      "behavior": "Installed version shows a green circled check when current or an amber circled arrow when an update is available, with accessible labels and a tooltip containing the available version. Removed the separate version-status paragraph and completed maintenance notice. Active maintenance progress and failure messages remain visible.",
+      "local": {
+        "typecheck": "passed",
+        "computerBrowserTests": 11,
+        "visualChecks": "current and update-available version icons"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Both version states, tooltips, absence of redundant status text, desktop 1280px and mobile 320px verified on the protected deployment and custom domain with intercepted fixtures. Restored preview sizing, resources on their tab, unified refresh, Channels and global controls passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerHeaderControls": {
+      "deploymentId": "dpl_Dr41f76FGM4J4wTsGZShPHPhSNfL",
+      "sourceHash": "3860b73abce2f14d0ada3592ced6db1353262df02b037fa60064fc670be98c11",
+      "behavior": "Connect/reconnect and take-over/return-control actions are compact icon buttons at the top right of the computer card, with tooltips, accessible labels and pressed state for takeover. Removed the old controls from beneath the desktop and updated connection hints to point above. The page-level Refresh computer action still refreshes status, metrics and the Overview desktop.",
+      "local": {
+        "typecheck": "passed",
+        "computerAndWorkspaceBrowserTests": 20,
+        "visualChecks": "desktop and mobile header controls"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px checked on protected deployment and custom domain with isolated intercepted fixtures. Header control positions, labels, connect/reconnect requests, no controls below desktop, unified refresh, version icons, restored preview sizing, resources tab, Channels and global controls passed. No horizontal overflow, browser errors or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerBannerMaintenance": {
+      "deploymentId": "dpl_pm5ENKBHnmPycmKyzedKeyyjS5qy",
+      "sourceHash": "a57ab6dedb39f93a89efe491f496a0da74f1211d660125760693433ffd18a174",
+      "behavior": "Restart computer and Update computer actions appear in the top banner with Refresh computer, across all Computer tabs. The status card contains information and operation progress. Confirmation dialogs, maintenance polling and disabled states remain; submission errors use the existing workspace error toast. Mobile maintenance labels are shortened visually while accessible names remain complete.",
+      "local": {
+        "typecheck": "passed",
+        "computerBrowserTests": 11,
+        "visualChecks": "desktop and 320px mobile banner"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on the protected deployment and custom domain with isolated intercepted fixtures. Banner actions, absence of status-card actions, confirmation dialogs from Resource usage and Overview, current/update-available states, computer header controls, desktop sizing, unified refresh, Channels and global controls passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "sharedChannelConnectionStatus": {
+      "deploymentId": "dpl_56EadyDm4M5uqbCU58Rkk53de8Fw",
+      "sourceHash": "5a90ebb7648272858d140dff0716420975b975efb4c4853604e09d1bcdd4b881",
+      "behavior": "Channels shows one shared Inkbox connection badge beside the introduction across Contact, Messages and Calls. Contact cards focus on addresses and actions, without repeated Ready or Connected badges. Checking, unavailable and connection-needed states remain, along with setup instructions and contact action gating.",
+      "local": {
+        "typecheck": "passed",
+        "channelsBrowserTests": 6,
+        "visualChecks": "desktop and 320px mobile contact dialog"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on the protected deployment and custom domain with isolated intercepted fixtures. One shared connection badge, contact actions, message history, call transcripts, keyboard focus, Computer controls and sizing passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerBannerButtonAlignment": {
+      "deploymentId": "dpl_3zst8vb1goqwRrnea4jpeaFoBLkh",
+      "sourceHash": "d7dfc116eb3583512eb3eb0102a2988cf4cd9dd878688355f4442aa7984a7435",
+      "behavior": "Refresh, Restart and Update stack vertically at the right of the Computer banner, with equal widths, heights and 8px gaps across desktop and mobile. Visible labels omit the repeated computer wording, while accessible names and maintenance tooltips preserve context.",
+      "local": {
+        "visualChecks": "Vertical alignment, equal sizing, spacing and no horizontal overflow at 1440px, 1280px, 768px and 320px."
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on the protected deployment and custom domain with isolated intercepted fixtures. Vertical banner alignment, current/update-available states, maintenance confirmations, desktop sizing, unified refresh, Channels and global controls passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerScreenAspectRatio": {
+      "deploymentId": "dpl_Kcfxkg4KQY6AnZ4oNev1NwRQVEPG",
+      "sourceHash": "f43b0196eb673e8cb03cfb2479264825fcfbfe17cb4671fe3d931aacd5dc0642",
+      "behavior": "The Computer preview uses the dimensions reported by computer status, including before connection and after refresh. 540 by 1140 renders as portrait and 1440 by 900 as landscape. The browser frame centers within its card and fits the available width and height without forcing the screen into a fixed rectangle. Standalone Computer views retain connection-provided dimensions as their fallback.",
+      "local": {
+        "typecheck": "passed",
+        "computerBrowserTests": 11,
+        "visualChecks": "portrait and landscape proportions, refresh and mobile layout"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on the protected deployment and custom domain with isolated intercepted fixtures. Portrait proportions before and after connection request, landscape proportions after status refresh, banner alignment and labels, maintenance confirmations, Channels and global controls passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerStatusRefresh": {
+      "deploymentId": "dpl_C6C8wPPX2k7KfQeFNNRb3XXLw1PJ",
+      "sourceHash": "68425eb9f78e4d4623cdcedb910e1287ac0c1ae0172caa28f48e8140d6f52ab1",
+      "behavior": "Refresh moves from the Computer banner to one 32px icon button at the top right of the Overview status panel. Its accessible name, tooltip, disabled state and spinning icon identify refresh progress. It continues to refresh status and metrics and reconnect the desktop. Restart and Update remain stacked in the banner across Computer tabs.",
+      "local": {
+        "typecheck": "passed",
+        "computerBrowserTests": 11,
+        "transientRetry": "One initial browser navigation hit Windows ERR_NO_BUFFER_SPACE before page load; targeted retry passed.",
+        "visualChecks": "desktop and mobile status-panel icon placement"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on the protected deployment and custom domain with isolated intercepted fixtures. One icon-only refresh in the status panel, top-right placement, unified refresh behavior, portrait/landscape proportions, maintenance confirmations, Channels and global controls passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerUsageRefresh": {
+      "deploymentId": "dpl_7S2ZLQZ1PPGXv24eTnuUsoRjfc2A",
+      "sourceHash": "b463c7a64e5f246eaaca283ad559eb06041ebe96243dceab3ecc5b5474b2a0fc",
+      "behavior": "Resource usage has a 32px refresh icon at the panel's top right. It reloads usage metrics, shows a spinner and disables repeated clicks during the request. Existing stale-snapshot and error handling remain. Usage refresh does not reconnect the desktop.",
+      "local": {
+        "typecheck": "passed",
+        "computerBrowserTests": 11,
+        "visualChecks": "desktop and mobile usage panel; failed metrics recovery and loading state"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on the protected deployment and custom domain with isolated intercepted fixtures. Icon-only usage refresh, top-right placement, updated metrics and no desktop reconnection passed. Status-panel refresh, portrait/landscape proportions, maintenance confirmations, Channels and global controls also passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerSharingLanguage": {
+      "deploymentId": "dpl_GvaDZHXVK2SV46156bevCgra1dyZ",
+      "sourceHash": "178cd50adc5fcfa25aa0d9961a905752d3ecd9c30fc9eaa63cb28f1d0ebecfcf",
+      "behavior": "Computer sharing uses Share & preview, Ready to share? and Remote access. Registration, approval, link creation, closure, statuses and future notifications use warm, plain language. Temporary and public access, expiry, inability to close temporary links early, and computer wake behavior remain explicit.",
+      "local": {
+        "typecheck": "passed",
+        "computerAndFilesBrowserTests": 13,
+        "computerServiceTests": 38,
+        "visualChecks": "desktop 1280px and mobile 320px empty/populated sharing sections and add/review/create/close dialogs"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "ui": "Desktop 1280px and mobile 320px verified on protected deployment and custom domain with isolated intercepted fixtures. Sharing language and all dialogs, status/usage refresh, portrait/landscape proportions, maintenance confirmations, Channels and global controls passed. No browser errors, horizontal overflow or application mutations.",
+        "anonymousAccess": "Computer status/metrics, Channels, calls and sessions returned 401."
+      },
+      "migrations": "No database migration needed or applied."
+    },
+    "computerRemoteAccessTab": {
+      "deploymentId": "dpl_8EHSNzbxrNPCUqiCN8sTpjv56UEk",
+      "sourceHash": "ef9efec47dd836924bf1d0ad0d52ce5ae13ec180ac3b5df101309d1a3658e6f1",
+      "behavior": "Renamed the Computer tab from Share & preview to Remote access.",
+      "local": {
+        "relevantBrowserTests": 3,
+        "result": "passed; desktop and mobile tab navigation and file explorer retention"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "ui": "Protected deployment and custom domain checked at 1280px and 320px. Remote access tab label, selected state, both sharing panels and navigation passed without horizontal overflow, browser errors or application mutations.",
+        "health": "healthy; demo false",
+        "anonymousComputerStatus": "401"
+      },
+      "migrations": "None needed or applied."
+    },
+    "computerAddDoorwayCopy": {
+      "deploymentId": "dpl_2vcVCWSriitcqrEEFdz1MAsBpFxr",
+      "sourceHash": "f08fb62b68428b43874d73a2ae01249365cc5271b5c6bbe4e4707f9c09efdb4e",
+      "behavior": "Changed the add button and dialog to Add a doorway. Examples cover websites, dashboards and handy tools, with generic helper copy and readiness labels.",
+      "local": {
+        "relevantBrowserTests": 2,
+        "result": "passed; registration and both link types; mobile layout"
+      },
+      "production": {
+        "vercel": "Production build passed; READY and promoted",
+        "customDomain": "verified against deployment id",
+        "ui": "Protected deployment and custom domain checked at 1280px and 320px. Remote access tab, Add a doorway button, dialog copy, port field, focus return and navigation passed without horizontal overflow, browser errors or application mutations.",
+        "health": "healthy; demo false",
+        "anonymousComputerStatus": "401"
+      },
+      "migrations": "None needed or applied."
+    },
+    "computerBackupsRelease": {
+      "deploymentId": "dpl_2vgAtZsKqyCKRAz5Kxuf54Uv94nn",
+      "sourceHash": "84c09e75674d32ef25eaaedd71feae46e1f7d6a6a5c347c70fb4af9b0d87f88d",
+      "behavior": "Back up now in the Computer banner; Checkpoints tab lists native nightly/manual backups with dates and sizes, explicit destructive restore confirmation and progress; compact backup icon in the chat computer header. Existing banner controls, Remote access copy and reported desktop proportions retained.",
+      "backend": "Owner-scoped Agent37 endpoints through the existing durable reconciliation outbox. One provider issue per operation, persisted receipts for delayed retries, 15-minute manual cooldown, active-session checks for restore, recovery checks after uncertain replies, and reconnection retry without repeating restore. Restore reapplies current profile/workspace/channel configuration, repairs the active session if absent, invalidates service health and refreshes display dimensions. Supabase workspace/account records remain current.",
+      "local": {
+        "unitAdapterDatabaseTests": 347,
+        "focusedBrowserTests": 28,
+        "finalBackupBrowserTests": 6,
+        "typecheck": "passed",
+        "productionBuild": "passed"
+      },
+      "candidate": {
+        "origin": "https://potato-potential-rm939j87t-venatio-studios.vercel.app",
+        "verifiedAt": "2026-10-08T21:54:58.148Z",
+        "widths": [
+          1280,
+          768,
+          320
+        ],
+        "backupBanner": "passed",
+        "chatBackupIcon": "passed",
+        "checkpointListing": "passed",
+        "restoreConfirmation": "passed",
+        "backgroundProgress": "passed",
+        "anonymousAccess": "denied",
+        "providerMutations": 0,
+        "browserErrors": []
+      },
+      "published": {
+        "origin": "https://potato-potential.rgbknights.com",
+        "verifiedAt": "2026-10-08T21:56:05.874Z",
+        "widths": [
+          1280,
+          768,
+          320
+        ],
+        "backupBanner": "passed",
+        "chatBackupIcon": "passed",
+        "checkpointListing": "passed",
+        "restoreConfirmation": "passed",
+        "backgroundProgress": "passed",
+        "anonymousAccess": "denied",
+        "providerMutations": 0,
+        "browserErrors": []
+      },
+      "limitations": "Provider backup and restore contract, timeouts, tenant isolation and recovery exercised with mocked providers. Deployed UI flows used intercepted fixtures; no real customer backup or restore was initiated during verification.",
+      "migrations": "No database migration needed or applied. Checkpoint operations and recent request receipts use agents.state."
+    },
+    "routineEditingRelease": {
+      "fields": [
+        "name",
+        "prompt",
+        "schedule",
+        "timezone",
+        "enabled",
+        "agent",
+        "profile"
+      ],
+      "partialUpdates": "Only supplied fields forwarded. Name/prompt changes preserve next_run. Agent/profile support explicit null resets. Profile compatibility validated against the current owned routine.",
+      "editor": "Edit action on every routine, prefilled fields, advanced agent/profile choices, draft-preserving retries, accessible cancel/focus behavior, app notification suffix retained once, native prompts left intact, 320px layout verified.",
+      "reconciliation": "Explicit agent/profile choices retained. Previously fired date-pinned reminders are not removed after rescheduling to a later date or time.",
+      "validation": "378 unit/API/provider/database checks, 6 routine editor browser checks and 9 workspace regression checks passed, along with typecheck and production builds. One stale workspace assertion updated to the previously requested shared Channels connection status. Protected candidate and custom-domain UI checks passed at 1280, 768 and 320 pixels; anonymous reads and PATCH rejected, no browser errors. Provider contracts mocked; no customer routines changed for verification.",
+      "database": "No migration or routine recreation required; native IDs and archived check-ins retained.",
+      "sourceHash": "72102d3a50926a03a838ef657e7704035609d33adf944549e08dc987aa3c2f02",
+      "verifiedAt": "2026-10-08T22:11:48.308Z"
+    },
+    "inkboxSharedContactRouting": {
+      "deploymentId": "dpl_9Bb36t7bpP9aVTcBnuwQr8KUxRN5",
+      "sourceHash": "7f0b8e40898af77cf78dddad5a878d862821235a95786f9812c7e6f358d3e8f0",
+      "behavior": "Router links are used only to connect. Connected shared-line users are directed to the contact card Inkbox sent in Messages. Direct call links and phone-number copying use a provisioned dedicated number only. Loading and failed status reads expose no router contact actions.",
+      "local": {
+        "typecheck": "passed",
+        "unitApiDatabaseTests": 378,
+        "browserTests": 117,
+        "channelBrowserTests": 8,
+        "productionBuild": "passed"
+      },
+      "production": {
+        "build": "passed",
+        "state": "READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": "healthy; demo false",
+        "viewports": [
+          1280,
+          320
+        ],
+        "sharedContact": "passed",
+        "routerConnectionOnly": "passed",
+        "dedicatedNumber": "passed",
+        "anonymousAccess": "denied",
+        "browserErrors": [],
+        "unexpectedRequests": []
+      },
+      "migrations": "No database migration needed or applied for this fix."
+    }
   },
-  "validatedAt": "2026-10-07T11:27:58.000Z"
+  "validatedAt": "2026-10-08T22:53:51.448Z"
 }

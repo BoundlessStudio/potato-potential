@@ -6,6 +6,12 @@ export {
   type InstanceBudget,
 } from "./budget";
 export type { InstanceUsage, ServiceUsage } from "./usage";
+export {
+  routineAgents,
+  routineNotificationSuffix,
+  routinePatchSchema,
+  type RoutinePatch,
+} from "./routines";
 
 export const phoneSchema = z
   .string()
@@ -97,7 +103,7 @@ export type Agent = {
   };
   computerOperation?: {
     id: string;
-    action: "restart" | "update";
+    action: "restart" | "update" | "backup" | "restore";
     phase: "queued" | "applying" | "checking" | "completed" | "failed";
     targetTemplate: string;
     requestedAt: string;
@@ -105,8 +111,20 @@ export type Agent = {
     finishedAt?: string;
     bootBefore?: string;
     acknowledged?: boolean;
+    rejected?: boolean;
+    checkingAt?: string;
     error?: string;
+    backupId?: string;
+    backupsBefore?: string[];
+    restored?: boolean;
+    reconciled?: boolean;
   };
+  backupAttemptedAt?: string;
+  checkpointRequests?: {
+    id: string;
+    action: "backup" | "restore";
+    backupId?: string;
+  }[];
   computerScreen?: { width: number; height: number };
   computerHelperVersion?: number;
   workspaceHelperVersion?: number;
@@ -123,6 +141,7 @@ export type PublicAgent = Omit<
   | "runtimeKeyBox"
   | "runtimeKeyId"
   | "phoneChallengeBox"
+  | "checkpointRequests"
 > & { phoneChallenge?: string };
 export function publicAgent(
   agent: Agent,
@@ -134,6 +153,7 @@ export function publicAgent(
     runtimeKeyBox: _runtime,
     runtimeKeyId: _key,
     phoneChallengeBox: _challenge,
+    checkpointRequests: _receipts,
     ...safe
   } = agent;
   return { ...safe, ...(phoneChallenge ? { phoneChallenge } : {}) };
@@ -165,13 +185,6 @@ export type WorkspaceItem = z.infer<typeof itemSchema> & {
   ownerId: string;
   createdAt: string;
   updatedAt: string;
-  // Managed by the server; editing task details must not replace these links.
-  sessionLinks?: TaskSessionLink[];
-};
-export type TaskSessionLink = {
-  sessionId: string;
-  instanceId: string;
-  linkedAt: string;
 };
 export type Notification = {
   id: string;
@@ -194,6 +207,12 @@ export type ComputerMetrics = {
   hours: number;
   step_seconds: number;
   fetched_at: number;
+};
+export type ComputerBackup = {
+  id: string;
+  kind: "automatic" | "manual";
+  created: number;
+  size_bytes: number;
 };
 export type ComputerService = {
   ownerId: string;
@@ -261,12 +280,23 @@ export type FileEntry = {
   modified: number;
   hidden: boolean;
 };
+export type BrowserEntry = Omit<FileEntry, "type" | "size"> & {
+  type: "file" | "directory" | "symlink" | "other";
+  size: number | null;
+};
+export type FileListing = {
+  path: string;
+  parentPath: string | null;
+  entries: BrowserEntry[];
+  truncated: boolean;
+};
 export type FileUpload = {
   id: string;
   ownerId: string;
   instanceId: string;
   directory: string;
   name: string;
+  purpose?: "chat" | "files";
   size: number;
   sha256: string;
   chunks: Record<string, string>;
@@ -308,7 +338,8 @@ export type Cron = {
   enabled: boolean;
   last_run: number | null;
   next_run: number | null;
-  agent?: string;
+  agent?: string | null;
+  profile?: string | null;
   once?: boolean;
 };
 export type CronRun = {
@@ -394,15 +425,29 @@ export function ownerIdFromCallback(
   )?.ownerId;
 }
 export function isFiredOneTime(cron: Cron): boolean {
+  if (!cron.last_run || /^Yearly\b/i.test(cron.name)) return false;
   const fields = cron.schedule.trim().split(/\s+/);
   const datePinned =
     fields.length === 5 &&
     fields.slice(0, 4).every((field) => /^\d+$/.test(field)) &&
     fields[4] === "*";
+  if (!datePinned) return cron.once === true;
+  // PATCH keeps last_run. An older firing must not remove a rescheduled reminder.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: cron.timezone,
+    minute: "numeric",
+    hour: "numeric",
+    hourCycle: "h23",
+    day: "numeric",
+    month: "numeric",
+  }).formatToParts(new Date(cron.last_run * 1000));
+  const part = (type: string) =>
+    Number(parts.find((value) => value.type === type)!.value);
   return (
-    Boolean(cron.last_run) &&
-    !/^Yearly\b/i.test(cron.name) &&
-    (cron.once === true || datePinned)
+    part("day") === Number(fields[2]) &&
+    part("month") === Number(fields[3]) &&
+    part("hour") * 60 + part("minute") >=
+      Number(fields[1]) * 60 + Number(fields[0])
   );
 }
 export function visibleMessage(content: string): string | null {

@@ -11,7 +11,13 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { credential, joinBeta, sendSignInLink, signOut } from "@/lib/client";
+import {
+  ApiError,
+  credential,
+  joinBeta,
+  sendSignInLink,
+  signOut,
+} from "@/lib/client";
 import { Brand, Companion } from "./companion";
 import { LandingPage } from "./landing-page";
 import {
@@ -33,6 +39,7 @@ export function PublicEntry({
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [invitationRequired, setInvitationRequired] = useState(false);
   useEffect(() => {
     if (!signIn) return;
     const url = new URL(window.location.href);
@@ -64,6 +71,7 @@ export function PublicEntry({
     if (busy || checkingSession) return;
     setBusy(true);
     setError("");
+    setInvitationRequired(false);
     try {
       if (signIn)
         await sendSignInLink(
@@ -77,6 +85,9 @@ export function PublicEntry({
       setSent(true);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Please try again.");
+      setInvitationRequired(
+        error instanceof ApiError && error.code === "invitation_required",
+      );
     } finally {
       setBusy(false);
     }
@@ -155,6 +166,12 @@ export function PublicEntry({
       {error && (
         <p className="error-inline" role="alert">
           {error}
+          {invitationRequired && (
+            <>
+              {" "}
+              <Link href="/">Join the beta list</Link>
+            </>
+          )}
         </p>
       )}
       {sent && (

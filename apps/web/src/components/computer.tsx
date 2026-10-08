@@ -1,10 +1,27 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Eye, MousePointer2, RefreshCw, X } from "lucide-react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type CSSProperties,
+  type Ref,
+} from "react";
+import {
+  ArrowUpRight,
+  Eye,
+  Loader2,
+  MousePointer2,
+  PlugZap,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import { api, demo } from "@/lib/client";
 import { Companion } from "./companion";
 import type { Profile } from "@boundless/shared";
+import { ChatBackupButton } from "./computer-backups";
 
+export type ComputerHandle = { refresh: () => void };
 export function Computer({
   profile,
   onClose,
@@ -12,6 +29,8 @@ export function Computer({
   onError,
   autoConnect = true,
   available = true,
+  screenSize,
+  ref,
 }: {
   profile: Profile;
   onClose?: () => void;
@@ -19,6 +38,8 @@ export function Computer({
   onError: (message: string) => void;
   autoConnect?: boolean;
   available?: boolean;
+  screenSize?: { width: number; height: number };
+  ref?: Ref<ComputerHandle>;
 }) {
   const target = useRef<HTMLDivElement>(null);
   const rfb = useRef<any>(null);
@@ -40,7 +61,18 @@ export function Computer({
   const mounted = useRef(false);
   const [state, setState] = useState("Connecting");
   const [retry, setRetry] = useState(0);
-  const [screen, setScreen] = useState({ width: 540, height: 1140 });
+  const [connectedScreen, setScreen] = useState({ width: 540, height: 1140 });
+  const screen = screenSize || connectedScreen;
+  useImperativeHandle(
+    ref,
+    () => ({
+      refresh() {
+        setRequested(true);
+        setRetry((value) => value + 1);
+      },
+    }),
+    [],
+  );
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -169,17 +201,85 @@ export function Computer({
           <span className="eyebrow">A window into their world</span>
           <h3>{profile.agentName}’s computer</h3>
         </div>
-        {onClose && (
+        <div
+          className="computer-heading-actions"
+          role="group"
+          aria-label="Computer controls"
+        >
+          {onClose && (
+            <ChatBackupButton available={available} onError={onError} />
+          )}
           <button
-            className="icon-button"
-            onClick={onClose}
-            aria-label="Close computer"
+            type="button"
+            className="icon-button computer-action"
+            aria-label={requested ? "Reconnect computer" : "Connect to desktop"}
+            title={requested ? "Reconnect computer" : "Connect to desktop"}
+            disabled={!available}
+            onClick={() => {
+              setRequested(true);
+              setRetry((value) => value + 1);
+            }}
           >
-            <X size={18} />
+            {requested ? <RefreshCw size={16} /> : <PlugZap size={16} />}
           </button>
-        )}
+          <button
+            type="button"
+            className="icon-button computer-action"
+            aria-label={
+              changingControl
+                ? "Waiting for companion…"
+                : control
+                  ? "Return control"
+                  : "Take over"
+            }
+            title={
+              changingControl
+                ? "Waiting for companion…"
+                : control
+                  ? "Return control"
+                  : "Take over"
+            }
+            aria-pressed={control}
+            onClick={toggle}
+            disabled={
+              changingControl ||
+              !requested ||
+              !available ||
+              (!demo && !rfb.current)
+            }
+          >
+            {changingControl ? (
+              <Loader2 size={16} className="spin" />
+            ) : control ? (
+              <Eye size={16} />
+            ) : (
+              <MousePointer2 size={16} />
+            )}
+          </button>
+          {onClose && (
+            <button
+              type="button"
+              className="icon-button"
+              onClick={onClose}
+              aria-label="Close computer"
+              title="Close computer"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
-      <div className="computer-browser">
+      <div
+        className="computer-browser"
+        data-screen-orientation={
+          screen.height > screen.width ? "portrait" : "landscape"
+        }
+        style={
+          {
+            "--computer-screen-ratio": screen.width / screen.height,
+          } as CSSProperties
+        }
+      >
         <div className="browser-chrome">
           <span />
           <span />
@@ -197,7 +297,11 @@ export function Computer({
               scene
             />
             <p>A little space to do big things.</p>
-            <small>Connect Agent37 to see the real desktop.</small>
+            <small>
+              {!requested
+                ? "Connect above to open their desktop."
+                : "Connect Agent37 to see the real desktop."}
+            </small>
             {control && (
               <span className="control-cursor">
                 <MousePointer2 size={22} /> You have control
@@ -205,11 +309,39 @@ export function Computer({
             )}
           </div>
         ) : (
-          <div
-            ref={target}
-            className="vnc-screen"
-            style={{ aspectRatio: `${screen.width} / ${screen.height}` }}
-          />
+          <div className="computer-screen-wrap">
+            <div
+              ref={target}
+              className="vnc-screen"
+              style={{ aspectRatio: `${screen.width} / ${screen.height}` }}
+            />
+            {(!requested || !available || state !== "Connected") && (
+              <div className="computer-placeholder" role="status">
+                <Companion
+                  avatar={profile.avatar}
+                  color={profile.color}
+                  size={180}
+                  scene
+                />
+                <p>
+                  {!available
+                    ? "A little pause at their desk."
+                    : !requested
+                      ? "A little space to make things happen."
+                      : state === "Connecting"
+                        ? "Opening a window into their world…"
+                        : "Their desk is a refresh away."}
+                </p>
+                <small>
+                  {!available
+                    ? "The desktop will be ready when the computer is available."
+                    : requested
+                      ? "Reconnect above to take another peek."
+                      : "Connect above to take a peek."}
+                </small>
+              </div>
+            )}
+          </div>
         )}
       </div>
       <div className="computer-status">
@@ -219,33 +351,7 @@ export function Computer({
           : !requested
             ? "Connect when you’re ready"
             : state}
-        <button
-          className={requested ? "icon-button" : "text-button"}
-          aria-label={requested ? "Reconnect computer" : "Connect to desktop"}
-          disabled={!available}
-          onClick={() => {
-            setRequested(true);
-            setRetry((value) => value + 1);
-          }}
-        >
-          <RefreshCw size={14} />
-          {!requested && "Connect to desktop"}
-        </button>
       </div>
-      <button
-        className={`button ${control ? "button-primary" : "button-secondary"} computer-control`}
-        onClick={toggle}
-        disabled={
-          changingControl || !requested || !available || (!demo && !rfb.current)
-        }
-      >
-        {control ? <Eye size={16} /> : <MousePointer2 size={16} />}{" "}
-        {changingControl
-          ? "Waiting for companion…"
-          : control
-            ? "Return control"
-            : "Take over"}
-      </button>
       <p className="fine-print">
         {control
           ? "Use the mouse and keyboard. Return control when you’re ready for your agent to continue."

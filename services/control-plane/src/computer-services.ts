@@ -111,7 +111,7 @@ async function notifyRequest(dep: Dependencies, row: ComputerLinkRequest) {
     await dep.repo.notify({
       id: row.notificationId,
       ownerId: row.ownerId,
-      text: `${row.label} needs your approval for a ${row.kind === "signed" ? "signed preview" : "public"} link on port ${row.port}.`,
+      text: `A little go-ahead for ${row.label}? Your companion would like to share a ${row.kind === "signed" ? "temporary" : "public"} link.`,
       createdAt: row.createdAt,
       target: { view: "computer", requestId: row.id },
     });
