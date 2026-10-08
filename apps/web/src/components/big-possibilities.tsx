@@ -408,8 +408,9 @@ export function BigPossibilities() {
                 The companion uses Agent37’s managed model service, backed by an
                 OpenAI-compatible router to OpenRouter. Provider credentials
                 stay out of your browser. Model, search, app-tool, and Perflo
-                usage share an operator-set managed-service cap; computer and
-                Inkbox costs are accounted for separately.
+                usage share a monthly managed-service cap you can adjust in
+                Settings → Budget; computer and Inkbox costs are accounted for
+                separately.
               </p>
               <p>
                 Your companion has full access to its computer. Hermes’ native

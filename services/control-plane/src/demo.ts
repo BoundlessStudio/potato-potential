@@ -10,6 +10,7 @@ import type {
   FileEntry,
   DirectoryListing,
   FileUpload,
+  InstanceBudget,
 } from "@boundless/shared";
 import { ProviderError } from "./providers";
 import { MemoryRepository } from "./repository";
@@ -108,6 +109,7 @@ export class DemoAgent37 implements AgentProvider {
   }
   schedules = new Map<string, Cron[]>();
   connectionsMap = new Map<string, Connection[]>();
+  budgets = new Map<string, InstanceBudget>();
   constructor() {
     this.files.set("~/.hermes/SOUL.md", {
       content: "# Hermes\nBe helpful and use your native tools.\n",
@@ -135,6 +137,17 @@ export class DemoAgent37 implements AgentProvider {
       public_ports: [{ port: 8765, url: `https://${id}-8765.example.test` }],
     };
     this.instances.set(id, row);
+    const cap =
+      (body.budget as { monthly_cap_micros?: number } | undefined)
+        ?.monthly_cap_micros || 0;
+    const consumed = Math.min(cap, 1_280_000);
+    this.budgets.set(id, {
+      monthlyCapMicros: cap,
+      monthlyConsumedMicros: consumed,
+      monthlyRemainingMicros: cap - consumed,
+      monthlyPeriod: new Date().toISOString().slice(0, 7),
+      creditRemainingMicros: 0,
+    });
     return row;
   }
   async instance(id: string) {
@@ -539,8 +552,24 @@ export class DemoAgent37 implements AgentProvider {
       },
     };
   }
-  async budget() {
-    return {};
+  async getBudget(id: string) {
+    const budget = this.budgets.get(id);
+    if (!budget)
+      throw new ProviderError(404, "not_found", "Computer not found.");
+    return structuredClone(budget);
+  }
+  async budget(id: string, micros: number) {
+    const current = await this.getBudget(id);
+    const next = {
+      ...current,
+      monthlyCapMicros: micros,
+      monthlyRemainingMicros: Math.max(
+        0,
+        micros - current.monthlyConsumedMicros,
+      ),
+    };
+    this.budgets.set(id, next);
+    return next;
   }
 }
 export class DemoInkbox implements InkboxProvider {
@@ -628,6 +657,7 @@ export async function seedDemo(
   const instance = await provider.createInstance({
     user: DEMO_USER,
     template: "boundless-hermes-desktop@2",
+    budget: { monthly_cap_micros: 5_000_000 },
   });
   const identity = await inkbox.request("/identities", {
     method: "POST",

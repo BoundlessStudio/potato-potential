@@ -7,6 +7,7 @@ import type {
   Toolkit,
   FileEntry,
   DirectoryListing,
+  InstanceBudget,
 } from "@boundless/shared";
 import { HttpError, shellQuote } from "./security";
 import { z } from "zod";
@@ -181,6 +182,7 @@ export interface AgentProvider {
   disconnect(id: string, connectionId: string): Promise<void>;
   usage(id: string): Promise<any>;
   budget(id: string, micros: number): Promise<any>;
+  getBudget(id: string): Promise<InstanceBudget>;
 }
 export class Agent37 implements AgentProvider {
   constructor(private key: string) {}
@@ -608,6 +610,33 @@ export class Agent37 implements AgentProvider {
   }
   usage(id: string) {
     return this.json(this.host(`/instances/${id}/usage`));
+  }
+  async getBudget(id: string): Promise<InstanceBudget> {
+    const result = z
+      .object({
+        monthly_cap_micros: z.number().int().nonnegative(),
+        monthly_consumed_micros: z.number().int().nonnegative(),
+        monthly_remaining_micros: z.number().int().nonnegative(),
+        monthly_period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+        credit_remaining_micros: z.number().int().nonnegative(),
+      })
+      .safeParse(
+        await this.json(this.host(`/instances/${id}/budget`, {}, 15_000)),
+      );
+    if (!result.success)
+      throw new ProviderError(
+        502,
+        "invalid_budget",
+        "Couldn’t verify the current budget. Try again.",
+      );
+    const value = result.data;
+    return {
+      monthlyCapMicros: value.monthly_cap_micros,
+      monthlyConsumedMicros: value.monthly_consumed_micros,
+      monthlyRemainingMicros: value.monthly_remaining_micros,
+      monthlyPeriod: value.monthly_period,
+      creditRemainingMicros: value.credit_remaining_micros,
+    };
   }
   budget(id: string, micros: number) {
     return this.json(

@@ -29,6 +29,7 @@ import { boundedSse } from "./streams";
 import { computerBusy, screenForTemplate } from "./computer-maintenance";
 import { registerBetaRoutes } from "./beta";
 import { registerFileRoutes, cleanUploadsLocked } from "./files";
+import { registerBudgetRoutes } from "./budget";
 import { FILE_TRANSFER_VERSION } from "./file-transfer";
 import {
   registerAgentComputerRoutes,
@@ -465,6 +466,7 @@ export function createApp(dep: Dependencies) {
   }
   registerComputerRoutes(app, dep, (req) => actor(req).id, account);
   registerFileRoutes(app, dep, (req) => actor(req).id, ready);
+  registerBudgetRoutes(app, dep, (req) => actor(req).id, account);
 
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);

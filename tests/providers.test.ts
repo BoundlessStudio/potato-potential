@@ -218,6 +218,42 @@ it("uses hosting auth, managed cap contract, and an owner desktop token lasting 
   });
   expect(JSON.parse(fetch.mock.calls[1][1].body).ttl_seconds).toBe(60);
 });
+it("reads and validates the hosting budget without exposing provider credentials", async () => {
+  const fetch = vi
+    .fn()
+    .mockResolvedValueOnce(
+      Response.json({
+        monthly_cap_micros: 5_000_000,
+        monthly_consumed_micros: 1_250_000,
+        monthly_remaining_micros: 3_750_000,
+        monthly_period: "2026-10",
+        credit_remaining_micros: 250_000,
+        updated_at: 123,
+        private_key: "do-not-return",
+      }),
+    )
+    .mockResolvedValueOnce(Response.json({ monthly_cap_micros: -1 }));
+  vi.stubGlobal("fetch", fetch);
+  const provider = new Agent37("hosting-secret");
+  expect(await provider.getBudget("abcdefghij")).toEqual({
+    monthlyCapMicros: 5_000_000,
+    monthlyConsumedMicros: 1_250_000,
+    monthlyRemainingMicros: 3_750_000,
+    monthlyPeriod: "2026-10",
+    creditRemainingMicros: 250_000,
+  });
+  expect(fetch.mock.calls[0][0]).toBe(
+    "https://api.agent37.com/v1/instances/abcdefghij/budget",
+  );
+  expect(fetch.mock.calls[0][1].headers.Authorization).toBe(
+    "Bearer hosting-secret",
+  );
+  expect(fetch.mock.calls[0][1].method).toBeUndefined();
+  await expect(provider.getBudget("abcdefghij")).rejects.toMatchObject({
+    status: 502,
+    code: "invalid_budget",
+  });
+});
 it("uses the hosting contracts for metrics, signed services and public creation/removal", async () => {
   const points = [[Math.floor(Date.now() / 1000), 0.5]];
   const metrics = {

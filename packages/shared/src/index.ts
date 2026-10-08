@@ -1,5 +1,10 @@
 import { z } from "zod";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
+export {
+  MAX_BUDGET_MICROS,
+  budgetUpdateSchema,
+  type InstanceBudget,
+} from "./budget";
 
 export const phoneSchema = z
   .string()
