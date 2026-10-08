@@ -8,6 +8,7 @@ import type {
   FileEntry,
   DirectoryListing,
   InstanceBudget,
+  InstanceUsage,
 } from "@boundless/shared";
 import { HttpError, shellQuote } from "./security";
 import { z } from "zod";
@@ -181,6 +182,7 @@ export interface AgentProvider {
   connect(id: string, toolkit: string, callbackUrl: string): Promise<any>;
   disconnect(id: string, connectionId: string): Promise<void>;
   usage(id: string): Promise<any>;
+  getUsage(id: string): Promise<InstanceUsage>;
   budget(id: string, micros: number): Promise<any>;
   getBudget(id: string): Promise<InstanceBudget>;
 }
@@ -610,6 +612,52 @@ export class Agent37 implements AgentProvider {
   }
   usage(id: string) {
     return this.json(this.host(`/instances/${id}/usage`));
+  }
+  async getUsage(id: string): Promise<InstanceUsage> {
+    const count = z.number().int().nonnegative();
+    const service = z.object({ cost_micros: count, calls: count });
+    const empty = { cost_micros: 0, calls: 0 };
+    const result = z
+      .object({
+        period: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/),
+        total_micros: count,
+        by_integration: z.object({
+          llm: service
+            .extend({ input_tokens: count, output_tokens: count })
+            .default({ ...empty, input_tokens: 0, output_tokens: 0 }),
+          brave: service.default(empty),
+          composio: service.default(empty),
+          perflo: service.default(empty),
+        }),
+      })
+      .safeParse(
+        await this.json(this.host(`/instances/${id}/usage`, {}, 15_000)),
+      );
+    if (!result.success)
+      throw new ProviderError(
+        502,
+        "invalid_usage",
+        "Couldn’t verify usage. Try again.",
+      );
+    const value = result.data;
+    const normalize = (row: { cost_micros: number; calls: number }) => ({
+      costMicros: row.cost_micros,
+      calls: row.calls,
+    });
+    return {
+      period: value.period,
+      totalMicros: value.total_micros,
+      byIntegration: {
+        llm: {
+          ...normalize(value.by_integration.llm),
+          inputTokens: value.by_integration.llm.input_tokens,
+          outputTokens: value.by_integration.llm.output_tokens,
+        },
+        brave: normalize(value.by_integration.brave),
+        composio: normalize(value.by_integration.composio),
+        perflo: normalize(value.by_integration.perflo),
+      },
+    };
   }
   async getBudget(id: string): Promise<InstanceBudget> {
     const result = z

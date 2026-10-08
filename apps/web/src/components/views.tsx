@@ -46,6 +46,7 @@ import { Companion } from "./companion";
 import { FileDownloadLink } from "./file-download-link";
 import { MemorySettings } from "./memory-settings";
 import { BudgetSettings } from "./budget-settings";
+import { UsageSettings } from "./usage-settings";
 
 type Feedback = {
   onError: (message: string) => void;
@@ -1263,6 +1264,7 @@ export function Settings({
         </div>
       </form>
       <BudgetSettings onSuccess={feedback.onSuccess} />
+      <UsageSettings />
       <MemorySettings onSuccess={feedback.onSuccess} />
       <div className="danger-zone">
         <div>

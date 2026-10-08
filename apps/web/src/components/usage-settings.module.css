@@ -1,0 +1,65 @@
+.card {
+  margin-top: 26px;
+}
+.card > p {
+  line-height: 1.7;
+}
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin: 24px 0;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.summary dt {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.summary dd {
+  margin: 7px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.breakdown {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+}
+.breakdown caption {
+  text-align: left;
+  font-weight: 600;
+  padding-bottom: 8px;
+}
+.breakdown th,
+.breakdown td {
+  padding: 13px 0;
+  text-align: right;
+  border-bottom: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.breakdown thead th {
+  color: var(--muted);
+  font-weight: 500;
+}
+.breakdown th:first-child {
+  text-align: left;
+  width: 38%;
+  padding-right: 10px;
+}
+.breakdown tbody th {
+  font-weight: 500;
+}
+.card > button {
+  margin: 12px 0 4px;
+}
+@media (max-width: 600px) {
+  .summary {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}

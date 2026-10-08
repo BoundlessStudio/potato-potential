@@ -5,6 +5,7 @@ export {
   budgetUpdateSchema,
   type InstanceBudget,
 } from "./budget";
+export type { InstanceUsage, ServiceUsage } from "./usage";
 
 export const phoneSchema = z
   .string()

@@ -11,6 +11,7 @@ import type {
   DirectoryListing,
   FileUpload,
   InstanceBudget,
+  InstanceUsage,
 } from "@boundless/shared";
 import { ProviderError } from "./providers";
 import { MemoryRepository } from "./repository";
@@ -549,6 +550,24 @@ export class DemoAgent37 implements AgentProvider {
       by_integration: {
         llm: { cost_micros: 930000 },
         brave: { cost_micros: 350000 },
+      },
+    };
+  }
+  async getUsage(id: string): Promise<InstanceUsage> {
+    const budget = await this.getBudget(id);
+    return {
+      period: budget.monthlyPeriod,
+      totalMicros: 1_280_000,
+      byIntegration: {
+        llm: {
+          costMicros: 930_000,
+          calls: 42,
+          inputTokens: 184_032,
+          outputTokens: 96_110,
+        },
+        brave: { costMicros: 350_000, calls: 70 },
+        composio: { costMicros: 0, calls: 0 },
+        perflo: { costMicros: 0, calls: 0 },
       },
     };
   }

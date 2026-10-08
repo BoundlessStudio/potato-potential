@@ -4,6 +4,61 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
+it("validates and normalizes managed usage without forwarding unknown provider fields", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    Response.json({
+      period: "2026-10",
+      total_micros: 114,
+      private_key: "private",
+      by_integration: {
+        llm: {
+          cost_micros: 0,
+          calls: 2,
+          input_tokens: 100,
+          output_tokens: 50,
+          private_key: "private",
+        },
+        composio: { cost_micros: 114, calls: 1 },
+      },
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  expect(await new Agent37("admin").getUsage("abcdefghij")).toEqual({
+    period: "2026-10",
+    totalMicros: 114,
+    byIntegration: {
+      llm: { costMicros: 0, calls: 2, inputTokens: 100, outputTokens: 50 },
+      brave: { costMicros: 0, calls: 0 },
+      composio: { costMicros: 114, calls: 1 },
+      perflo: { costMicros: 0, calls: 0 },
+    },
+  });
+  expect(fetch.mock.calls[0][0]).toBe(
+    "https://api.agent37.com/v1/instances/abcdefghij/usage",
+  );
+  expect(fetch.mock.calls[0][1].headers.Authorization).toBe("Bearer admin");
+});
+it.each([
+  { period: "2026-13", total_micros: 0, by_integration: {} },
+  { period: "2026-10", total_micros: -1, by_integration: {} },
+  { period: "2026-10", total_micros: 1e20, by_integration: {} },
+  {
+    period: "2026-10",
+    total_micros: 0,
+    by_integration: { brave: { cost_micros: 0, calls: 1.5 } },
+  },
+  {
+    period: "2026-10",
+    total_micros: 0,
+    by_integration: { llm: { cost_micros: 0, calls: 1 } },
+  },
+  { period: "2026-10", total_micros: 0 },
+])("rejects malformed usage instead of reporting zero", async (body) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  await expect(
+    new Agent37("admin").getUsage("abcdefghij"),
+  ).rejects.toMatchObject({ status: 502, code: "invalid_usage" });
+});
 it("uses native remote directory listings while excluding files, links and unsafe destinations", async () => {
   const fetch = vi
     .fn()
