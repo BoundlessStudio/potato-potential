@@ -973,13 +973,18 @@ export function createApp(dep: Dependencies) {
   });
   app.put("/api/memory/:file", async (req, res) => {
     const agent = await ready(req);
-    const file = z.enum(["user", "memory"]).parse(req.params.file);
+    const file = z.enum(["user", "memory", "persona"]).parse(req.params.file);
     const body = z
       .object({ content: z.string().max(60000), modified: z.number().finite() })
       .parse(req.body);
+    const paths = {
+      user: "~/.hermes/memories/USER.md",
+      memory: "~/.hermes/memories/MEMORY.md",
+      persona: "~/.hermes/SOUL.md",
+    };
     await a37.writeFile(
       agent.instanceId,
-      `~/.hermes/memories/${file === "user" ? "USER" : "MEMORY"}.md`,
+      paths[file],
       body.content,
       body.modified,
     );

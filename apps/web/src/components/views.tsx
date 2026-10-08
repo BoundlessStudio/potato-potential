@@ -44,6 +44,7 @@ import {
 import { api, demo } from "@/lib/client";
 import { Companion } from "./companion";
 import { FileDownloadLink } from "./file-download-link";
+import { MemorySettings } from "./memory-settings";
 
 type Feedback = {
   onError: (message: string) => void;
@@ -1110,15 +1111,8 @@ export function Settings({
 } & Feedback) {
   const [draft, setDraft] = useState(profile);
   const [saving, setSaving] = useState(false);
-  const [memory, setMemory] = useState<{
-    content: string;
-    modified: number;
-  } | null>(null);
-  const [memoryFile, setMemoryFile] = useState<"user" | "memory">("user");
-  const [memoryOpen, setMemoryOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [closing, setClosing] = useState(false);
-  const [channels, setChannels] = useState<any>(null);
   useEffect(() => setDraft(profile), [profile]);
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -1135,24 +1129,6 @@ export function Settings({
       setSaving(false);
     }
   }
-  async function readMemory(file: "user" | "memory") {
-    try {
-      setMemory(await api(`/memory/${file}`));
-      setMemoryFile(file);
-      setMemoryOpen(true);
-    } catch (error) {
-      feedback.onError(errorText(error));
-    }
-  }
-  async function saveMemory() {
-    try {
-      await api(`/memory/${memoryFile}`, "PUT", memory);
-      setMemory(await api(`/memory/${memoryFile}`));
-      feedback.onSuccess("Memory saved.");
-    } catch (error) {
-      feedback.onError(errorText(error));
-    }
-  }
   return (
     <>
       <PageHeading
@@ -1160,6 +1136,7 @@ export function Settings({
         title="A companion of your own."
         description="A name, a personality, and a little space to keep learning together."
       />
+      <MemorySettings onSuccess={feedback.onSuccess} />
       <form className="settings-layout" onSubmit={save}>
         <div className="settings-card">
           <div className="personalization-preview">
@@ -1200,6 +1177,16 @@ export function Settings({
               </button>
             ))}
           </div>
+          <dl className="companion-contact-details">
+            <div>
+              <dt>Agent email</dt>
+              <dd>{agent.agentEmail}</dd>
+            </div>
+            <div>
+              <dt>Your verified number</dt>
+              <dd>{profile.phone}</dd>
+            </div>
+          </dl>
         </div>
         <div className="settings-card stack">
           <div className="form-two">
@@ -1275,75 +1262,6 @@ export function Settings({
           </button>
         </div>
       </form>
-      <div className="settings-bottom">
-        <div className="settings-card">
-          <span className="eyebrow">One relationship, wherever you are</span>
-          <h2>Keep in touch.</h2>
-          <div className="channel-lines">
-            <p>
-              <span>Web chat</span>
-              <span className="status-tag completed">Ready</span>
-            </p>
-            <p>
-              <span>Agent email</span>
-              <a href={`mailto:${agent.agentEmail}`}>{agent.agentEmail}</a>
-            </p>
-            <p>
-              <span>Your verified number</span>
-              <strong>{profile.phone}</strong>
-            </p>
-            <p>
-              <span>iMessage & calls</span>
-              <strong>
-                {agent.phoneVerifiedAt || demo
-                  ? "Connected through Inkbox"
-                  : "Finish phone setup"}
-              </strong>
-            </p>
-            <p>
-              <span>Voice</span>
-              <strong>Hosted voice + transcript</strong>
-            </p>
-            {agent.sms && (
-              <p>
-                <span>SMS</span>
-                <strong>
-                  {agent.sms.number} · {agent.sms.status}
-                </strong>
-              </p>
-            )}
-          </div>
-          <p className="fine-print">
-            Hermes keeps its native tools, approvals, and enforcement. Phone
-            calls use Inkbox Voice AI and share their transcript afterwards.
-          </p>
-        </div>
-        <div className="settings-card">
-          <span className="eyebrow">A little room to remember</span>
-          <h2>What they know.</h2>
-          <p className="muted">
-            See and edit the notes your agent keeps across conversations.
-          </p>
-          <div className="memory-actions">
-            <button
-              className="button button-secondary"
-              type="button"
-              onClick={() => void readMemory("user")}
-            >
-              <BookOpen size={16} />
-              About you
-            </button>
-            <button
-              className="button button-secondary"
-              type="button"
-              onClick={() => void readMemory("memory")}
-            >
-              <Sparkles size={16} />
-              Agent notes
-            </button>
-          </div>
-        </div>
-      </div>
       <div className="danger-zone">
         <div>
           <h3>Close your account</h3>
@@ -1359,50 +1277,6 @@ export function Settings({
           Delete account
         </button>
       </div>
-      {memoryOpen && memory && (
-        <Modal
-          title={
-            memoryFile === "user"
-              ? "The things they know about you"
-              : "Your agent’s notes"
-          }
-          onClose={() => setMemoryOpen(false)}
-        >
-          <label>
-            Native Hermes memory
-            <textarea
-              className="large-textarea"
-              value={memory.content}
-              onChange={(event) =>
-                setMemory((current) =>
-                  current
-                    ? { ...current, content: event.target.value }
-                    : current,
-                )
-              }
-            />
-          </label>
-          <div className="modal-actions">
-            <button
-              className="button button-secondary"
-              onClick={() => void readMemory(memoryFile)}
-            >
-              <RefreshCw size={15} />
-              Reload latest
-            </button>
-            <button
-              className="button button-primary"
-              onClick={() => void saveMemory()}
-            >
-              Save memory
-            </button>
-          </div>
-          <p className="fine-print">
-            If your agent edited these notes meanwhile, saving pauses so you can
-            reload the latest version.
-          </p>
-        </Modal>
-      )}
       {deleting && (
         <Modal
           title="Say goodbye to this companion?"

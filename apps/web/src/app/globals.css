@@ -1860,6 +1860,7 @@ label small {
   align-items: start;
 }
 .settings-card {
+  min-width: 0;
   background: #fff;
   border: 1px solid #e8dced;
   border-radius: 13px;
@@ -1913,6 +1914,10 @@ label small {
   background: #f2eafa;
   box-shadow: 0 0 0 2px #ceb7df29;
 }
+.settings-layout .avatar-options svg {
+  max-width: 100%;
+  height: auto;
+}
 .avatar-options button small {
   font-size: 9px;
   line-height: 2.2;
@@ -1938,6 +1943,24 @@ label small {
 .color-options button.selected {
   box-shadow: 0 0 0 1px #c1a8d4;
 }
+.companion-contact-details {
+  display: grid;
+  gap: 16px;
+  margin: 20px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid #eee4f4;
+}
+.companion-contact-details dt {
+  font-size: 11px;
+  color: #8a709b;
+}
+.companion-contact-details dd {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6d5878;
+  overflow-wrap: anywhere;
+}
 .settings-layout .stack label {
   font-size: 11px;
   color: #aa89c1;
@@ -1953,12 +1976,6 @@ label small {
   grid-template-columns: 1fr 1fr;
   gap: 18px;
 }
-.settings-bottom {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 22px;
-  margin-top: 22px;
-}
 .settings-card h2 {
   font-size: 20px;
   font-weight: 600;
@@ -1969,36 +1986,100 @@ label small {
   font-size: 11px;
   color: #bd9ace;
 }
-.channel-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin: 20px 0;
-}
-.channel-lines p {
-  display: flex;
-  gap: 15px;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 10px;
-  color: #c0a2d0;
-}
-.channel-lines strong {
-  font-size: 10px;
-  font-weight: 500;
-  color: #b794ca;
-}
-.channel-lines a {
-  font-size: 10px;
-  color: #b292cb;
-  overflow-wrap: anywhere;
-}
-.channel-lines .status-tag {
-  font-size: 8px;
-}
 .settings-card > .fine-print {
   font-size: 10px;
   color: #c2a8d1;
+}
+.memory-settings {
+  margin-bottom: 26px;
+}
+.memory-settings > .muted {
+  line-height: 1.7;
+}
+.memory-editors {
+  display: grid;
+  gap: 26px;
+  margin-top: 26px;
+}
+.memory-editor {
+  min-width: 0;
+  padding-top: 24px;
+  border-top: 1px solid #eee4f4;
+}
+.memory-editor-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.memory-editor-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #66516f;
+}
+.memory-editor-heading svg {
+  color: var(--purple);
+}
+.memory-filename {
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: #f5f1fa;
+  font-size: 10px;
+  color: #8a709b;
+}
+.memory-description {
+  margin: 10px 0 16px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #8c7b99;
+}
+.memory-content {
+  min-height: 260px;
+  padding: 18px;
+  border-color: #e5d8ef;
+  background: #fdfcfe;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  color: #6d5878;
+  resize: vertical;
+}
+.memory-content:disabled {
+  opacity: 0.7;
+}
+.memory-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+.memory-editor-status {
+  font-size: 11px;
+  color: #8c7b99;
+}
+.memory-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.memory-editor-actions .button {
+  font-size: 11px;
+}
+.memory-error {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 10px 0 0;
+}
+.memory-settings > .fine-print {
+  margin: 24px 0 0;
+  line-height: 1.7;
 }
 .memory-actions {
   display: flex;
@@ -2796,7 +2877,6 @@ label small {
 .task-content p,
 .catalog-note,
 .settings-card .muted,
-.channel-lines p,
 .danger-zone p,
 .modal > p,
 .modal .fine-print,
@@ -3426,10 +3506,6 @@ label small {
   }
   .settings-card .avatar-options button {
     max-width: 70px;
-  }
-  .settings-bottom {
-    grid-template-columns: 1fr;
-    gap: 18px;
   }
   .danger-zone {
     flex-direction: column;

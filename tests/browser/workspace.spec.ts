@@ -307,13 +307,12 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
     page.getByRole("button", { name: "Resume Browser routine" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "About you" }).click();
-  await expect(page.getByRole("dialog")).toBeVisible();
-  await page.getByLabel("Native Hermes memory").fill("Browser-verified memory");
-  await page.getByRole("button", { name: "Save memory" }).click();
-  await expect(page.getByText("Memory saved.", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Close dialog" }).click();
-  await expect(page.getByRole("dialog")).not.toBeVisible();
+  const aboutYou = page.getByRole("textbox", { name: "About you", exact: true });
+  await expect(aboutYou).toBeEnabled();
+  await aboutYou.fill("Browser-verified memory");
+  await page.getByRole("button", { name: "Save About you", exact: true }).click();
+  await expect(page.getByText("About you saved.", { exact: true })).toBeVisible();
+  await expect(aboutYou).toHaveValue("Browser-verified memory");
   await page
     .getByRole("button", { name: "Your conversation", exact: true })
     .click();

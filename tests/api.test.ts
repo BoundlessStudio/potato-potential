@@ -145,6 +145,7 @@ it("scopes records, memory, desktop, sessions and connectors to the caller", asy
   for (const path of [
     "/computer",
     "/memory/memory",
+    "/memory/persona",
     "/sessions/" + "f".repeat(32),
     "/apps",
   ])
@@ -218,6 +219,40 @@ it("guards stale native memory edits and returns chat SSE suitable for replay", 
     "response.completed",
   );
 });
+it.each([
+  ["user", "~/.hermes/memories/USER.md"],
+  ["memory", "~/.hermes/memories/MEMORY.md"],
+  ["persona", "~/.hermes/SOUL.md"],
+])(
+  "saves %s to its native file and rejects stale edits",
+  async (file, path) => {
+    const first = await (await call(`/memory/${file}`)).json();
+    expect(
+      (
+        await call(`/memory/${file}`, "PUT", {
+          content: `Updated ${file}`,
+          modified: first.modified,
+        })
+      ).status,
+    ).toBe(200);
+    expect(a37.files.get(path)?.content).toBe(`Updated ${file}`);
+    const latest = await (await call(`/memory/${file}`)).json();
+    expect(latest.content).toBe(`Updated ${file}`);
+    expect(latest.modified).not.toBe(first.modified);
+    expect(
+      (
+        await call(`/memory/${file}`, "PUT", {
+          content: "Stale edit",
+          modified: first.modified,
+        })
+      ).status,
+    ).toBe(412);
+    expect(a37.files.get(path)?.content).toBe(`Updated ${file}`);
+    expect(
+      (await call(`/memory/${file}`, "PUT", latest, "demo-new")).status,
+    ).toBe(409);
+  },
+);
 it.each([
   {
     season: "summer",
