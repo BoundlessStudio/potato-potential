@@ -1,13 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-test("loads all expanded files below Pip’s details and saves each draft independently", async ({
+test("shows only About you and Agent notes below Pip’s details and saves each draft independently", async ({
   page,
 }) => {
   const files: Record<string, { content: string; modified: number }> = {
     user: { content: "Quiet mornings and clear plans.", modified: 1 },
     memory: { content: "Keep ongoing work visible.", modified: 2 },
-    persona: { content: "# SOUL\nBe curious and helpful.", modified: 3 },
   };
+  const reads: string[] = [];
   const saves: string[] = [];
   await page.route("**/api/memory/*", async (route) => {
     const file = route.request().url().split("/").pop()!;
@@ -21,6 +21,7 @@ test("loads all expanded files below Pip’s details and saves each draft indepe
       };
       return route.fulfill({ json: { saved: true } });
     }
+    reads.push(file);
     return route.fulfill({ json: files[file] });
   });
   await page.goto("/");
@@ -28,7 +29,6 @@ test("loads all expanded files below Pip’s details and saves each draft indepe
   const editors = [
     ["About you", "user"],
     ["Agent notes", "memory"],
-    ["SOUL", "persona"],
   ];
   for (const [title, file] of editors) {
     await expect(
@@ -38,6 +38,13 @@ test("loads all expanded files below Pip’s details and saves each draft indepe
       page.getByRole("button", { name: `Save ${title}`, exact: true }),
     ).toBeDisabled();
   }
+  await expect(
+    page.getByRole("textbox", { name: "SOUL", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Save SOUL", exact: true }),
+  ).toHaveCount(0);
+  expect(reads.sort()).toEqual(["memory", "user"]);
   expect(
     await page
       .locator(".memory-settings")
@@ -64,26 +71,26 @@ test("loads all expanded files below Pip’s details and saves each draft indepe
       .getByRole("textbox", { name: title, exact: true })
       .fill(`${title} draft`);
   }
-  await page.getByRole("button", { name: "Save SOUL", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Save Agent notes", exact: true })
+    .click();
   await expect(
-    page.getByRole("button", { name: "Save SOUL", exact: true }),
+    page.getByRole("button", { name: "Save Agent notes", exact: true }),
   ).toBeDisabled();
-  expect(saves).toEqual(["persona"]);
+  expect(saves).toEqual(["memory"]);
   await expect(
     page.getByRole("textbox", { name: "About you", exact: true }),
   ).toHaveValue("About you draft");
   await expect(
     page.getByRole("textbox", { name: "Agent notes", exact: true }),
   ).toHaveValue("Agent notes draft");
-  for (const [title] of editors.slice(0, 2)) {
-    await page
-      .getByRole("button", { name: `Save ${title}`, exact: true })
-      .click();
-    await expect(
-      page.getByRole("button", { name: `Save ${title}`, exact: true }),
-    ).toBeDisabled();
-  }
-  expect(saves).toEqual(["persona", "user", "memory"]);
+  await page
+    .getByRole("button", { name: "Save About you", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Save About you", exact: true }),
+  ).toBeDisabled();
+  expect(saves).toEqual(["memory", "user"]);
 });
 
 test("keeps stale drafts until an explicit reload and recovers file loading failures", async ({
@@ -141,21 +148,22 @@ test("keeps stale drafts until an explicit reload and recovers file loading fail
   await expect(
     page.getByRole("textbox", { name: "About you", exact: true }),
   ).toHaveValue("Unsaved about you");
-  const soul = page.getByRole("article", { name: "SOUL", exact: true });
-  await soul.getByRole("textbox").fill("My unsaved SOUL");
-  await soul.getByRole("button", { name: "Save SOUL", exact: true }).click();
-  await expect(soul.getByRole("alert")).toContainText("Reload before saving");
-  await expect(soul.getByRole("textbox")).toHaveValue("My unsaved SOUL");
+  await notes.getByRole("textbox").fill("My unsaved notes");
+  await notes
+    .getByRole("button", { name: "Save Agent notes", exact: true })
+    .click();
+  await expect(notes.getByRole("alert")).toContainText("Reload before saving");
+  await expect(notes.getByRole("textbox")).toHaveValue("My unsaved notes");
   await expect(
-    soul.getByRole("button", { name: "Save SOUL", exact: true }),
+    notes.getByRole("button", { name: "Save Agent notes", exact: true }),
   ).toBeEnabled();
-  await soul
+  await notes
     .getByRole("button", { name: "Discard edits & reload", exact: true })
     .click();
-  await expect(soul.getByRole("textbox")).toHaveValue("Latest persona");
-  await expect(soul.getByRole("alert")).toHaveCount(0);
+  await expect(notes.getByRole("textbox")).toHaveValue("Latest memory");
+  await expect(notes.getByRole("alert")).toHaveCount(0);
   await expect(
-    soul.getByRole("button", { name: "Save SOUL", exact: true }),
+    notes.getByRole("button", { name: "Save Agent notes", exact: true }),
   ).toBeDisabled();
   await page.setViewportSize({ width: 320, height: 740 });
   await expect(

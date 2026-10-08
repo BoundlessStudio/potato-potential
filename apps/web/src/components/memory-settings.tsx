@@ -21,14 +21,6 @@ const memoryFiles = [
       "Ongoing work, useful discoveries, and context carried between conversations.",
     icon: Sparkles,
   },
-  {
-    file: "persona",
-    title: "SOUL",
-    filename: "SOUL.md",
-    description:
-      "The personality and guidance that shape how your companion shows up.",
-    icon: Sparkles,
-  },
 ] as const;
 
 type NativeMemory = { content: string; modified: number };
@@ -199,8 +191,8 @@ export function MemorySettings({
       <span className="eyebrow">A little room to remember</span>
       <h2 id="memory-settings-title">What they know.</h2>
       <p className="muted">
-        Read and edit what your companion knows about you, remembers, and lives
-        by. Each file saves separately.
+        Read and edit what your companion knows about you and remembers. Each
+        file saves separately.
       </p>
       <div className="memory-editors">
         {memoryFiles.map((file) => (
