@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("loads all expanded files before Pip’s details and saves each draft independently", async ({
+test("loads all expanded files below Pip’s details and saves each draft independently", async ({
   page,
 }) => {
   const files: Record<string, { content: string; modified: number }> = {
@@ -46,7 +46,7 @@ test("loads all expanded files before Pip’s details and saves each draft indep
           !!(
             section.compareDocumentPosition(
               document.querySelector(".settings-layout")!,
-            ) & Node.DOCUMENT_POSITION_FOLLOWING
+            ) & Node.DOCUMENT_POSITION_PRECEDING
           ),
       ),
   ).toBe(true);

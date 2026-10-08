@@ -1136,7 +1136,6 @@ export function Settings({
         title="A companion of your own."
         description="A name, a personality, and a little space to keep learning together."
       />
-      <MemorySettings onSuccess={feedback.onSuccess} />
       <form className="settings-layout" onSubmit={save}>
         <div className="settings-card">
           <div className="personalization-preview">
@@ -1262,6 +1261,7 @@ export function Settings({
           </button>
         </div>
       </form>
+      <MemorySettings onSuccess={feedback.onSuccess} />
       <div className="danger-zone">
         <div>
           <h3>Close your account</h3>

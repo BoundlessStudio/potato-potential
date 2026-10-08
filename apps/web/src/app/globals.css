@@ -1991,7 +1991,7 @@ label small {
   color: #c2a8d1;
 }
 .memory-settings {
-  margin-bottom: 26px;
+  margin-top: 26px;
 }
 .memory-settings > .muted {
   line-height: 1.7;
