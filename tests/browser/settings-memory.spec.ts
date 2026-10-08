@@ -24,7 +24,7 @@ test("loads all expanded files below Pip’s details and saves each draft indepe
     return route.fulfill({ json: files[file] });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   const editors = [
     ["About you", "user"],
     ["Agent notes", "memory"],
@@ -124,7 +124,7 @@ test("keeps stale drafts until an explicit reload and recovers file loading fail
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   const notes = page.getByRole("article", { name: "Agent notes", exact: true });
   await expect(notes.getByRole("alert")).toContainText(
     "Couldn’t load agent notes",

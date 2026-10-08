@@ -252,7 +252,7 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
       .filter({ hasText: "Help me plan tomorrow" })
       .getByText(/I’ve got it. In this local preview/),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByRole("link", { name: "Tasks", exact: true }).click();
   await page.getByRole("button", { name: "Add a task", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Browser test task");
   await page.getByLabel("A little context").fill("A useful next step.");
@@ -260,7 +260,7 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   await expect(
     page.getByText("Browser test task", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Wiki", exact: true }).click();
+  await page.getByRole("link", { name: "Wiki", exact: true }).click();
   await page.getByRole("button", { name: "New page" }).click();
   await page.getByLabel("Title", { exact: true }).fill("Browser test wiki");
   await page
@@ -270,7 +270,7 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   await expect(
     page.getByText("Browser test wiki", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Apps", exact: true }).click();
+  await page.getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("textbox", { name: "Search apps" }).fill("github");
   await expect(page.getByRole("heading", { name: "GitHub" })).toBeVisible();
   const popupPromise = page.waitForEvent("popup");
@@ -292,7 +292,7 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   await expect(
     page.getByRole("button", { name: "Disconnect github" }),
   ).not.toBeVisible();
-  await page.getByRole("button", { name: "Routines", exact: true }).click();
+  await page.getByRole("link", { name: "Routines", exact: true }).click();
   await page.getByRole("button", { name: "New routine" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Browser routine");
   await page
@@ -306,7 +306,7 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   await expect(
     page.getByRole("button", { name: "Resume Browser routine" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   const aboutYou = page.getByRole("textbox", { name: "About you", exact: true });
   await expect(aboutYou).toBeEnabled();
   await aboutYou.fill("Browser-verified memory");
@@ -314,7 +314,7 @@ test("companion workspace, streamed chat, task/wiki editing, apps, memory and ta
   await expect(page.getByText("About you saved.", { exact: true })).toBeVisible();
   await expect(aboutYou).toHaveValue("Browser-verified memory");
   await page
-    .getByRole("button", { name: "Your conversation", exact: true })
+    .getByRole("link", { name: "Your conversation", exact: true })
     .click();
   await expect(
     page
@@ -376,7 +376,7 @@ test("mobile navigation and overflowing layout", async ({ page }) => {
     ),
   ).toBe(true);
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Tasks", exact: true }).click();
+  await page.getByRole("link", { name: "Tasks", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Good things, getting done." }),
   ).toBeVisible();
@@ -399,7 +399,7 @@ test("mobile navigation and overflowing layout", async ({ page }) => {
     ),
   ).toBe(true);
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await page.getByRole("link", { name: "Computer", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Computer", exact: true }),
   ).toBeVisible();

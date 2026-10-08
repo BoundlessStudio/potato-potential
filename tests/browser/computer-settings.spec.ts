@@ -27,7 +27,7 @@ test("customers confirm updates and can recover progress after leaving Computer"
     route.fulfill({ json: status }),
   );
   await page.goto("/");
-  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await page.getByRole("link", { name: "Computer", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Update computer", exact: true }),
   ).toBeEnabled();
@@ -54,7 +54,7 @@ test("customers confirm updates and can recover progress after leaving Computer"
   ).toBeDisabled();
   expect(actions).toEqual([{ action: "update" }]);
   await page.reload();
-  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await page.getByRole("link", { name: "Computer", exact: true }).click();
   await expect(
     page.getByText("Checking that everything is ready…"),
   ).toBeVisible();
@@ -127,7 +127,7 @@ test("regular customers find maintenance in Computer and general preferences in 
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "A companion of your own." }),
   ).toBeVisible();
@@ -138,7 +138,7 @@ test("regular customers find maintenance in Computer and general preferences in 
     page.getByRole("button", { name: "Update computer", exact: true }),
   ).toHaveCount(0);
   expect(maintenanceRequests).toBe(0);
-  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await page.getByRole("link", { name: "Computer", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "Restart computer", exact: true }),
   ).toBeEnabled();

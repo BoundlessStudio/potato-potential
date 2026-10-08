@@ -1,4 +1,5 @@
 "use client";
+import { usePathname } from "next/navigation";
 import {
   useCallback,
   useEffect,
@@ -61,6 +62,8 @@ import { PhoneField } from "@/components/phone-field";
 import { FeatureOverview } from "@/components/feature-overview";
 import { PublicEntry } from "@/components/public-entry";
 import { ChatUploads, useChatUploads } from "@/components/chat-uploads";
+import { WorkspaceLink } from "@/components/workspace-link";
+import { workspacePage, type WorkspacePage } from "@/lib/workspace-routes";
 import {
   downloadDestination,
   DOWNLOAD_RETURN_KEY,
@@ -75,8 +78,6 @@ import {
   Wiki,
 } from "@/components/views";
 
-type Tab =
-  "chat" | "tasks" | "wiki" | "routines" | "apps" | "computer" | "settings";
 const nav = [
   { id: "chat", label: "Your conversation", icon: MessageCircle },
   { id: "tasks", label: "Tasks", icon: CheckCircle2 },
@@ -89,6 +90,8 @@ const err = (error: unknown) =>
     ? error.message
     : "Something interrupted that request.";
 export default function Home() {
+  const pathname = usePathname();
+  const tab = workspacePage(pathname);
   const [hydrated, setHydrated] = useState(false);
   const [booting, setBooting] = useState(true);
   const [signedIn, setSignedIn] = useState(false);
@@ -96,7 +99,6 @@ export default function Home() {
   const [agent, setAgent] = useState<PublicAgent | null>(null);
   const [operator, setOperator] = useState(false);
   const [accountEmail, setAccountEmail] = useState("");
-  const [tab, setTab] = useState<Tab>("chat");
   const [computerRequestId, setComputerRequestId] = useState<string>();
   const [mobileNav, setMobileNav] = useState(false);
   const [items, setItems] = useState<WorkspaceItem[]>([]);
@@ -239,6 +241,14 @@ export default function Home() {
       if (toastTimer.current) clearTimeout(toastTimer.current);
     };
   }, [loadAccount, onError]);
+  useEffect(() => {
+    if (signedIn && pathname === "/")
+      window.history.replaceState(null, "", `/chat${window.location.search}`);
+  }, [signedIn, pathname]);
+  useEffect(() => {
+    if (signedIn)
+      document.title = `${tab.charAt(0).toUpperCase() + tab.slice(1)} — Potato Potential`;
+  }, [signedIn, tab]);
   useEffect(() => {
     if (!signedIn || !agent || agent.status === "ready") return;
     const timer = setInterval(() => void loadAccount(), 1500);
@@ -412,13 +422,16 @@ export default function Home() {
     );
   }, [onSuccess]);
   const clearPrompt = useCallback(() => setRoutinePrompt(undefined), []);
-  const navigate = (next: Tab) => {
-    setTab(next);
+  const navigate = (next: WorkspacePage) => {
+    // Next.js syncs native history with usePathname without remounting the
+    // workspace, keeping chat drafts, uploads and active streams intact.
+    if (window.location.pathname !== `/${next}`)
+      window.history.pushState(null, "", `/${next}`);
     setMobileNav(false);
   };
   const openSession = (id: string) => {
     setSelectedSession(id);
-    setTab("chat");
+    navigate("chat");
     setHistoryOpen(false);
   };
   function makeRoutine(text: string) {
@@ -549,11 +562,12 @@ export default function Home() {
         <div className="sidebar-label">YOUR LITTLE CORNER</div>
         <nav aria-label="Main navigation">
           {nav.map(({ id, label, icon: Icon }) => (
-            <button
+            <WorkspaceLink
               key={id}
-              aria-label={label}
-              className={`nav-item ${tab === id ? "active" : ""}`}
-              onClick={() => navigate(id)}
+              page={id}
+              label={label}
+              active={tab === id}
+              onNavigate={navigate}
             >
               <Icon size={19} />
               {label}
@@ -563,24 +577,26 @@ export default function Home() {
                     {items.filter((item) => item.status === "needs_you").length}
                   </span>
                 )}
-            </button>
+            </WorkspaceLink>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <button
-            className={`nav-item ${tab === "computer" ? "active" : ""}`}
-            onClick={() => navigate("computer")}
+          <WorkspaceLink
+            page="computer"
+            active={tab === "computer"}
+            onNavigate={navigate}
           >
             <Monitor size={19} />
             Computer
-          </button>
-          <button
-            className={`nav-item ${tab === "settings" ? "active" : ""}`}
-            onClick={() => navigate("settings")}
+          </WorkspaceLink>
+          <WorkspaceLink
+            page="settings"
+            active={tab === "settings"}
+            onNavigate={navigate}
           >
             <SettingsIcon size={18} />
             Settings
-          </button>
+          </WorkspaceLink>
           <div className="sidebar-profile">
             <span className="person-avatar">{profile.name.slice(0, 1)}</span>
             <div>
@@ -1189,7 +1205,7 @@ export default function Home() {
                     }
                     setReplyTo(note);
                     setSelectedSession(null);
-                    setTab("chat");
+                    navigate("chat");
                     setNotificationsOpen(false);
                     inputRef.current?.focus();
                   }}

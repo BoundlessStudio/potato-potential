@@ -34,7 +34,7 @@ test("closes once, shows provider cleanup, and clears sign-in when the account i
     await route.fulfill({ status: 202, json: { queued: true } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page
     .getByRole("button", { name: "Delete account", exact: true })
     .click();
@@ -98,7 +98,7 @@ test("offers account deletion retry when provider cleanup is interrupted", async
     await route.fulfill({ status: 202, json: { queued: true } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
   await page
     .getByRole("button", { name: "Delete account", exact: true })
     .click();

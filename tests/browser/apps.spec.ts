@@ -54,7 +54,7 @@ test("loads apps and another page, deduplicates overlaps and guides short search
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Apps", exact: true }).click();
+  await page.getByRole("link", { name: "Apps", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Alpha", exact: true }),
   ).toBeVisible();
@@ -118,7 +118,7 @@ test("shows catalog failures with retry and preserves the first page after pagin
     });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Apps", exact: true }).click();
+  await page.getByRole("link", { name: "Apps", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Couldn’t load the apps." }),
   ).toBeVisible();
@@ -166,7 +166,7 @@ test("ignores an old page response after switching catalog searches", async ({
     return route.fulfill({ json: { toolkits: [first], nextCursor: cursor } });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Apps", exact: true }).click();
+  await page.getByRole("link", { name: "Apps", exact: true }).click();
   await page.getByRole("button", { name: "Explore more apps" }).click();
   await expect(
     page.getByRole("button", { name: "Loading more apps" }),

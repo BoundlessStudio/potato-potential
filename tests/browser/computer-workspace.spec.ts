@@ -51,7 +51,7 @@ async function fixture(page: Page) {
 }
 async function open(page: Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await page.getByRole("link", { name: "Computer", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Computer", exact: true }),
   ).toBeVisible();
@@ -305,7 +305,7 @@ test("returns desktop control when navigating away and tells the next chat turn 
   await page.getByRole("button", { name: "Take over", exact: true }).click();
   await expect(page.getByText("You have control")).toBeVisible();
   await page
-    .getByRole("button", { name: "Your conversation", exact: true })
+    .getByRole("link", { name: "Your conversation", exact: true })
     .click();
   await page.getByPlaceholder(/A thought, a task/).fill("Please continue.");
   await page.getByRole("button", { name: "Send message" }).click();
@@ -343,7 +343,7 @@ test("shows metrics failures, empty samples and responsive services on mobile", 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Computer", exact: true }).click();
+  await page.getByRole("link", { name: "Computer", exact: true }).click();
   await expect(
     page.getByText("Metrics are temporarily unavailable."),
   ).toBeVisible();

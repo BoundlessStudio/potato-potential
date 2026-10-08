@@ -375,6 +375,7 @@ label small {
 }
 .nav-item:hover {
   background: #efebf5;
+  text-decoration: none;
 }
 .nav-item.active {
   background: #ebe5f7;
