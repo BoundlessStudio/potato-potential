@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import type { PublicAgent } from "@boundless/shared";
 test("keeps takeover read-only while cancellation is pending and after a failed handoff", async ({
   page,
 }) => {
@@ -425,22 +426,71 @@ test("mobile navigation and overflowing layout", async ({ page }) => {
     ),
   ).toBe(true);
 });
-test("resumable first-time setup with explicit preview phone confirmation", async ({
+test("resumes first-time setup after reload and confirms the phone automatically", async ({
   page,
 }) => {
+  let agent: PublicAgent | null = null;
+  let connected = false,
+    confirmed = false,
+    checks = 0;
   await page.addInitScript(() =>
     localStorage.setItem("boundless-demo-user", "demo-new"),
   );
+  await page.route("**/api/me", async (route) => {
+    const response = await route.fetch();
+    agent = (await response.json()).agent;
+    await route.fulfill({ response });
+  });
+  await page.route("**/api/onboarding/phone-connection", async (route) => {
+    checks++;
+    // Hold each phone step long enough to check it; let the demo provider
+    // confirm ownership and finish the real setup once Hi is simulated.
+    if (confirmed) return route.continue();
+    expect(agent?.status).toBe("awaiting_phone");
+    await route.fulfill({
+      json: {
+        agent: {
+          ...agent,
+          phoneLink: {
+            ...agent?.phoneLink,
+            status: connected ? "waiting_message" : "waiting_connection",
+          },
+        },
+      },
+    });
+  });
   await page.goto("/");
   await page.getByLabel("Your name").fill("Taylor");
   await page.getByLabel("Their name").fill("Fern");
   await page.getByLabel("Your mobile number").fill("+14165550999");
   await page.getByRole("button", { name: "Create my companion" }).click();
-  await expect(page.getByText(/VERIFY /)).toBeVisible();
+  await expect(
+    page.getByText("Waiting for connection", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Connect in Messages" }),
+  ).toBeVisible();
+  await expect(page.locator(".verification-code")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", {
+      name: /check connection|simulate phone|sent the code/i,
+    }),
+  ).toHaveCount(0);
+  connected = true;
+  await expect(
+    page.getByText("Connected; send Hi", { exact: true }),
+  ).toBeVisible();
+  const checksBeforeReload = checks;
   await page.reload();
-  await expect(page.getByText(/VERIFY /)).toBeVisible();
-  await page.getByRole("button", { name: /simulate/i }).click();
+  await expect(
+    page.getByText("Connected; send Hi", { exact: true }),
+  ).toBeVisible();
+  expect(checks).toBeGreaterThan(checksBeforeReload);
+  confirmed = true;
   await expect(
     page.getByRole("textbox", { name: "Message your companion" }),
   ).toBeVisible({ timeout: 15000 });
+  await expect(
+    page.getByRole("heading", { name: "Fern", exact: true }),
+  ).toBeVisible();
 });

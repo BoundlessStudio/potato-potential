@@ -47,6 +47,8 @@ Apply [the upload migration](supabase/migrations/20261007034424_file_uploads.sql
 
 The file-transfer release passed 197 unit/API/database tests, 45 browser tests, type checks, and production builds. The live 6 MB transfer passed through Vercel and survived both restart and template update; an empty file under `/home/linuxbrew` also passed. Production reconciliation installed the helper and instructions on the existing ready computer while preserving its native persona, callback, and instance. Temporary computers, Auth accounts, upload records, bindings, and jobs were verified removed. The Next.js catch-all is named `route` so Vercel cannot replace the Files API's `path` query parameter with route segments.
 
+The desktop connection stays open while switching browser tabs, navigating between Chat and Computer, or closing the preview. Mouse and keyboard control returns when the viewer is hidden or closed, and dropped connections retry automatically. Signing out or changing computers closes the previous session.
+
 ```mermaid
 flowchart LR
   Web[Next.js · Vercel] --> Auth[Supabase Auth]
@@ -166,7 +168,7 @@ Run `npx tsx scripts/live-computer-maintenance.ts` with the same key to validate
 - Use two verified invited accounts to check database, session, file, callback, connector, call, and desktop ownership.
 - Send/reconnect/cancel web chat; exchange iMessage/email and enabled SMS; call the hosted line and verify the transcript reaches Hermes.
 - Ask Hermes to create a dated reminder, let its instance sleep, and verify the reminder wakes it, contacts the owner, and appears in archived history.
-- Watch the real desktop, take over during browser work, return control, and verify its WebSocket closes when hidden/closed.
+- Watch the real desktop, take over during browser work, and verify that switching tabs/pages or closing the preview returns input control while preserving the connection. Reopen the viewer and confirm it is ready; verify a dropped connection recovers and signing out closes the session.
 - Exercise native approval requests, exhausted budgets, failed connectors, workspace helper edits, memory conflicts, and resumable deletion.
 
 The Vercel/Supabase deployment uses the project name `potato-potential`. Production infrastructure checks and full channel delivery are separate: a consenting owner still needs to complete phone verification, messaging and voice acceptance. For configured live development, run `npm run dev -w @boundless/web`; `npm run demo` starts the isolated mock API and preview.

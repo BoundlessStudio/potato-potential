@@ -23,6 +23,7 @@ import type {
 } from "@boundless/shared";
 import { api } from "@/lib/client";
 import { Computer, type ComputerHandle } from "./computer";
+import { useComputerSession } from "./computer-session";
 import { ComputerWorkspaceArt } from "./computer-workspace-art";
 import {
   ComputerMaintenance,
@@ -139,6 +140,7 @@ export function ComputerWorkspace({
   onRestored: () => void;
   requestId?: string;
 }) {
+  const session = useComputerSession();
   const [view, setView] = useState<
     "overview" | "files" | "services" | "resources" | "checkpoints"
   >("overview");
@@ -174,6 +176,16 @@ export function ComputerWorkspace({
       ["queued", "applying", "checking"].includes(status.operation.phase)) ||
     (backups.working && backups.data?.operation?.action === "restore") ||
     !!backups.data?.operation?.needsReconnect;
+  useEffect(() => {
+    // The first status read must not interrupt a connection borrowed from chat.
+    if (status)
+      session.setAvailable(
+        !statusError &&
+          !agent.suspended &&
+          status.canManage !== false &&
+          !maintenance,
+      );
+  }, [session, status, statusError, agent.suspended, maintenance]);
   const refreshStatus = useCallback(async () => {
     const read = ++statusRead.current;
     try {
@@ -418,6 +430,7 @@ export function ComputerWorkspace({
               ref={desktopRef}
               profile={profile}
               autoConnect={false}
+              availabilityKnown={!!status}
               screenSize={status?.screen}
               available={
                 !!status &&

@@ -4,6 +4,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type Ref,
 } from "react";
@@ -20,6 +21,7 @@ import { api, demo } from "@/lib/client";
 import { Companion } from "./companion";
 import type { Profile } from "@boundless/shared";
 import { ChatBackupButton } from "./computer-backups";
+import { useComputerSession } from "./computer-session";
 
 export type ComputerHandle = { refresh: () => void };
 export function Computer({
@@ -29,6 +31,7 @@ export function Computer({
   onError,
   autoConnect = true,
   available = true,
+  availabilityKnown = true,
   screenSize,
   ref,
 }: {
@@ -38,20 +41,32 @@ export function Computer({
   onError: (message: string) => void;
   autoConnect?: boolean;
   available?: boolean;
+  availabilityKnown?: boolean;
   screenSize?: { width: number; height: number };
   ref?: Ref<ComputerHandle>;
 }) {
   const target = useRef<HTMLDivElement>(null);
-  const rfb = useRef<any>(null);
+  const session = useComputerSession();
+  const {
+    requested,
+    state,
+    screen: connectedScreen,
+  } = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot,
+  );
   const [control, setControl] = useState(false);
   const controlRef = useRef(false);
+  const controlRequest = useRef(0);
   const onReturnRef = useRef(onReturn);
   onReturnRef.current = onReturn;
-  const [requested, setRequested] = useState(autoConnect);
   const availableRef = useRef(available && requested);
   availableRef.current = available && requested;
   function releaseControl() {
+    ++controlRequest.current;
     if (!controlRef.current) return;
+    session.setViewOnly();
     controlRef.current = false;
     if (mounted.current) setControl(false);
     onReturnRef.current();
@@ -59,19 +74,16 @@ export function Computer({
   const [changingControl, setChangingControl] = useState(false);
   const changing = useRef(false);
   const mounted = useRef(false);
-  const [state, setState] = useState("Connecting");
-  const [retry, setRetry] = useState(0);
-  const [connectedScreen, setScreen] = useState({ width: 540, height: 1140 });
   const screen = screenSize || connectedScreen;
   useImperativeHandle(
     ref,
     () => ({
       refresh() {
-        setRequested(true);
-        setRetry((value) => value + 1);
+        releaseControl();
+        session.refresh();
       },
     }),
-    [],
+    [session],
   );
   useEffect(() => {
     mounted.current = true;
@@ -80,108 +92,51 @@ export function Computer({
     };
   }, []);
   useEffect(() => {
-    if (!requested || !available) return;
-    if (demo) {
-      setState("Preview computer");
-      const visibility = () => {
-        if (document.hidden) releaseControl();
-      };
-      document.addEventListener("visibilitychange", visibility);
-      return () => {
-        document.removeEventListener("visibilitychange", visibility);
-        releaseControl();
-      };
-    }
-    let disposed = false;
-    let connecting = false;
-    async function connect() {
-      if (
-        disposed ||
-        document.hidden ||
-        connecting ||
-        rfb.current ||
-        !target.current
-      )
-        return;
-      connecting = true;
-      setState("Connecting");
-      try {
-        const [{ ws, screen: remoteScreen }, module] = await Promise.all([
-          api("/computer", "POST"),
-          import("@novnc/novnc"),
-        ]);
-        if (disposed || document.hidden || !target.current) return;
-        if (remoteScreen) setScreen(remoteScreen);
-        const instance = new module.default(target.current, ws);
-        rfb.current = instance;
-        instance.viewOnly = true;
-        instance.scaleViewport = true;
-        instance.resizeSession = false;
-        instance.addEventListener("connect", () => setState("Connected"));
-        instance.addEventListener("disconnect", () => {
-          if (rfb.current === instance) {
-            rfb.current = null;
-            releaseControl();
-          }
-          if (!disposed && !document.hidden && !rfb.current)
-            setState("Disconnected — reconnect when you’re ready");
-        });
-        instance.addEventListener("securityfailure", () =>
-          onError(
-            "The desktop connection could not be authenticated. Reconnect for a fresh token.",
-          ),
-        );
-      } catch (error) {
-        if (!disposed) {
-          setState("Connection interrupted");
-          onError(
-            error instanceof Error
-              ? error.message
-              : "Desktop connection failed.",
-          );
-        }
-      } finally {
-        connecting = false;
-      }
-    }
-    function visibility() {
-      if (document.hidden) {
-        rfb.current?.disconnect();
-        rfb.current = null;
-        releaseControl();
-        setState("Paused while this tab is hidden");
-      } else void connect();
-    }
-    document.addEventListener("visibilitychange", visibility);
-    void connect();
-    return () => {
-      disposed = true;
-      document.removeEventListener("visibilitychange", visibility);
-      rfb.current?.disconnect();
-      rfb.current = null;
-      releaseControl();
+    const detach = target.current ? session.attach(target.current) : undefined;
+    const visibility = () => {
+      if (document.hidden) releaseControl();
     };
-  }, [retry, onError, requested, available]);
+    const unsubscribe = session.subscribe(() => {
+      if (session.getSnapshot().state !== "Connected" && !demo)
+        releaseControl();
+    });
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      document.removeEventListener("visibilitychange", visibility);
+      unsubscribe();
+      releaseControl();
+      detach?.();
+    };
+  }, [session]);
+  useEffect(() => {
+    if (availabilityKnown) session.setAvailable(available);
+    if (autoConnect && available) session.start();
+    if (!available) releaseControl();
+  }, [session, autoConnect, available, availabilityKnown]);
   async function toggle() {
     if (changing.current) return;
     changing.current = true;
     setChangingControl(true);
-    const connection = rfb.current;
+    const connection = session.connection;
+    const request = ++controlRequest.current;
     try {
       if (!control) {
         await api("/computer/takeover", "POST");
         if (
           !mounted.current ||
+          request !== controlRequest.current ||
           !availableRef.current ||
           document.hidden ||
-          (!demo && (!connection || rfb.current !== connection))
+          (!demo &&
+            (!connection ||
+              session.connection !== connection ||
+              session.getSnapshot().state !== "Connected"))
         )
           return;
         if (connection) connection.viewOnly = false;
         controlRef.current = true;
         setControl(true);
       } else {
-        if (rfb.current) rfb.current.viewOnly = true;
         releaseControl();
       }
     } catch (error) {
@@ -216,8 +171,8 @@ export function Computer({
             title={requested ? "Reconnect computer" : "Connect to desktop"}
             disabled={!available}
             onClick={() => {
-              setRequested(true);
-              setRetry((value) => value + 1);
+              releaseControl();
+              session.refresh();
             }}
           >
             {requested ? <RefreshCw size={16} /> : <PlugZap size={16} />}
@@ -245,7 +200,7 @@ export function Computer({
               changingControl ||
               !requested ||
               !available ||
-              (!demo && !rfb.current)
+              (!demo && state !== "Connected")
             }
           >
             {changingControl ? (

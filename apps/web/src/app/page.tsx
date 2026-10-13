@@ -67,6 +67,7 @@ import {
 import { Brand, Companion } from "@/components/companion";
 import { Computer } from "@/components/computer";
 import { ComputerWorkspace } from "@/components/computer-workspace";
+import { ComputerSessionProvider } from "@/components/computer-session";
 import { PhoneField } from "@/components/phone-field";
 import { PhoneConnection } from "@/components/phone-connection";
 import { FeatureOverview } from "@/components/feature-overview";
@@ -680,7 +681,10 @@ export default function Home() {
     );
   if (!profile) return null;
   return (
-    <div
+    <ComputerSessionProvider
+      key={`${agent.ownerId}:${agent.instanceId}`}
+      available={!agent.suspended}
+      onError={onError}
       className="app-shell"
       style={{ "--companion-color": profile.color } as React.CSSProperties}
     >
@@ -1088,6 +1092,7 @@ export default function Home() {
                   onClose={() => setShowComputer(false)}
                   onReturn={returnControl}
                   onError={onError}
+                  available={!agent.suspended}
                 />
               ) : (
                 <>
@@ -1415,7 +1420,7 @@ export default function Home() {
           {...feedback}
         />
       )}
-    </div>
+    </ComputerSessionProvider>
   );
 }
 function Toast({
