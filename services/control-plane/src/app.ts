@@ -41,6 +41,10 @@ import { registerFileRoutes, cleanUploadsLocked } from "./files";
 import { registerBudgetRoutes } from "./budget";
 import { registerUsageRoutes } from "./usage";
 import { applyAssistantModel, registerModelRoutes } from "./assistant-model";
+import {
+  registerContactNumberRoutes,
+  savedContactNumber,
+} from "./contact-number";
 import { FILE_TRANSFER_VERSION } from "./file-transfer";
 import {
   registerAgentComputerRoutes,
@@ -445,6 +449,13 @@ export function createApp(dep: Dependencies) {
   registerBudgetRoutes(app, dep, (req) => actor(req).id, account);
   registerUsageRoutes(app, dep, (req) => actor(req).id, account);
   registerModelRoutes(app, dep, (req) => actor(req).id, ready);
+  registerContactNumberRoutes(
+    app,
+    dep,
+    (req) => actor(req).id,
+    account,
+    (req) => ready(req, true),
+  );
 
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);
@@ -1262,7 +1273,9 @@ export function createApp(dep: Dependencies) {
       Array.isArray(assignments) ? assignments : assignments.assignments || []
     ).some(
       (row: any) =>
-        row.remote_number === profile.phone && row.status === "active",
+        row.agent_identity_id === agent.identityId &&
+        row.remote_number === profile.phone &&
+        row.status === "active",
     );
     const sms = agent.sms
       ? await inkbox.request(
@@ -1275,6 +1288,7 @@ export function createApp(dep: Dependencies) {
       imessage: imessage ? "connected" : "connect_required",
       voice: "hosted",
       sms: sms ? { number: sms.number, status: sms.sms_status } : null,
+      contactNumber: imessage ? savedContactNumber(agent, profile) : null,
     });
   });
   app.get("/api/calls", async (req, res) => {

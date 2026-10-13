@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Check, Loader2, RefreshCw, Sparkles } from "lucide-react";
-import type { AssistantModel, AssistantModelSettings } from "@boundless/shared";
+import type { AssistantModelSettings } from "@boundless/shared";
 import { api, request } from "@/lib/client";
+import { ModelPicker, modelKey as key } from "./model-picker";
 import styles from "./model-settings.module.css";
 
-const key = (model: AssistantModel | null) =>
-  model ? JSON.stringify([model.provider, model.model]) : "";
 const message = (cause: unknown) =>
   cause instanceof Error
     ? cause.message
@@ -100,35 +99,18 @@ export function ModelSettings({
         </p>
       )}
       <form className={styles.form} onSubmit={save}>
-        <label htmlFor="assistant-model">Assistant model</label>
-        <select
-          id="assistant-model"
-          value={value}
+        <label id="assistant-model-label" htmlFor="assistant-model">
+          Assistant model
+        </label>
+        <ModelPicker
+          models={settings?.models || []}
+          value={selected === undefined ? settings?.model || null : selected}
           disabled={busy || !settings}
-          aria-describedby="assistant-model-help"
-          onChange={(event) => {
-            setValue(event.target.value);
+          onChange={(model) => {
+            setValue(key(model));
             setError("");
           }}
-        >
-          <option value="">Use computer default</option>
-          {settings?.model &&
-            !settings.models.some(
-              (model) => key(model) === key(settings.model),
-            ) && (
-              <option value={key(settings.model)}>
-                {settings.model.model} (unavailable)
-              </option>
-            )}
-          {settings?.models.map((model) => (
-            <option key={key(model)} value={key(model)}>
-              {model.label} ·{" "}
-              {model.provider.startsWith("custom:")
-                ? model.provider.slice(7)
-                : model.provider}
-            </option>
-          ))}
-        </select>
+        />
         <p id="assistant-model-help" className="fine-print">
           Use computer default removes the saved override. Changes apply to
           future messages and Routine runs, including existing conversations

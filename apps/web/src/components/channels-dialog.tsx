@@ -25,6 +25,7 @@ type ChannelStatus = {
   imessage: string;
   voice: string;
   sms: { number: string; status: string } | null;
+  contactNumber?: string | null;
 };
 type Call = {
   id: string;
@@ -223,9 +224,13 @@ export function ChannelsDialog({
         ? "Connected"
         : "Connection needed";
   const sms = !loading.contact && !errors.contact ? status?.sms : null;
+  const contactNumber = connected ? status?.contactNumber : null;
+  const callNumber = contactNumber || sms?.number;
+  const textNumber = contactNumber || sms?.number;
   // The connect details belong to Inkbox's router, not the shared agent line.
   // Inkbox sends that line's contact card to the user and omits it from the API.
-  const messageAddress = needsConnection ? agent.connect?.command : undefined;
+  const messageAddress =
+    contactNumber || (needsConnection ? agent.connect?.command : undefined);
 
   return (
     <Modal
@@ -323,20 +328,42 @@ export function ChannelsDialog({
                 <ContactCard
                   icon={<MessageCircle size={19} />}
                   title="iMessage"
-                  copyLabel="connection message"
+                  copyLabel={
+                    contactNumber ? "iMessage number" : "connection message"
+                  }
                   value={messageAddress}
                   description={
-                    connected
-                      ? `Open your conversation with ${agentName} in Messages, or use the saved contact card Inkbox sent when you connected.`
-                      : needsConnection
-                        ? "Send the connection message from your phone to get started. Inkbox will send you a contact card for future messages and calls."
-                        : "Your connection status is needed to show the messaging instructions."
+                    contactNumber
+                      ? `Message ${agentName} at the number you saved from their contact card.`
+                      : connected
+                        ? `Open your conversation with ${agentName} in Messages, or use the saved contact card Inkbox sent when you connected.`
+                        : needsConnection
+                          ? "Send the connection message from your phone to get started. Inkbox will send you a contact card for future messages and calls."
+                          : "Your connection status is needed to show the messaging instructions."
                   }
-                  action={needsConnection ? "Connect Messages" : undefined}
-                  href={needsConnection ? agent.connect?.smsLink : undefined}
+                  action={
+                    contactNumber
+                      ? "Open Messages"
+                      : needsConnection
+                        ? "Connect Messages"
+                        : undefined
+                  }
+                  href={
+                    contactNumber
+                      ? `sms:${contactNumber}`
+                      : needsConnection
+                        ? agent.connect?.smsLink
+                        : undefined
+                  }
                   onCopy={
                     messageAddress
-                      ? () => void copy(messageAddress, "Connection message")
+                      ? () =>
+                          void copy(
+                            messageAddress,
+                            contactNumber
+                              ? "iMessage number"
+                              : "Connection message",
+                          )
                       : undefined
                   }
                 />
@@ -344,37 +371,41 @@ export function ChannelsDialog({
                   icon={<Phone size={19} />}
                   title="Calls"
                   copyLabel="phone number"
-                  value={sms?.number}
+                  value={callNumber}
                   description={
-                    sms
-                      ? `Call this dedicated number. A voice assistant answers and ${agentName} receives the transcript afterwards.`
-                      : connected
-                        ? `Call ${agentName} from the saved contact card Inkbox sent in Messages. A voice assistant answers and ${agentName} receives the transcript afterwards.`
-                        : needsConnection
-                          ? "Connect iMessage, then call from the contact card Inkbox sends in Messages."
-                          : "Your connection status is needed to show the calling instructions."
+                    contactNumber
+                      ? `Call ${agentName} at the number you saved from their contact card. A voice assistant answers and ${agentName} receives the transcript afterwards.`
+                      : sms
+                        ? `Call this dedicated number. A voice assistant answers and ${agentName} receives the transcript afterwards.`
+                        : connected
+                          ? `Call ${agentName} from the saved contact card Inkbox sent in Messages. A voice assistant answers and ${agentName} receives the transcript afterwards.`
+                          : needsConnection
+                            ? "Connect iMessage, then call from the contact card Inkbox sends in Messages."
+                            : "Your connection status is needed to show the calling instructions."
                   }
-                  action={sms ? "Call" : undefined}
-                  href={sms ? `tel:${sms.number}` : undefined}
+                  action={callNumber ? "Call" : undefined}
+                  href={callNumber ? `tel:${callNumber}` : undefined}
                   onCopy={
-                    sms
-                      ? () => void copy(sms.number, "Phone number")
+                    callNumber
+                      ? () => void copy(callNumber, "Phone number")
                       : undefined
                   }
                 />
-                {sms && (
+                {textNumber && (
                   <ContactCard
                     icon={<MessageCircle size={19} />}
                     title="SMS"
-                    value={sms.number}
+                    value={textNumber}
                     description={
-                      ["active", "ready"].includes(sms.status)
-                        ? "Send a text message to this dedicated number."
-                        : "Setup in progress for this dedicated text-message number."
+                      contactNumber
+                        ? `Send a text message to ${agentName} at the number you saved from their contact card.`
+                        : ["active", "ready"].includes(sms!.status)
+                          ? "Send a text message to this dedicated number."
+                          : "Setup in progress for this dedicated text-message number."
                     }
                     action="Open SMS"
-                    href={`sms:${sms.number}`}
-                    onCopy={() => void copy(sms.number, "SMS number")}
+                    href={`sms:${textNumber}`}
+                    onCopy={() => void copy(textNumber, "SMS number")}
                   />
                 )}
               </div>

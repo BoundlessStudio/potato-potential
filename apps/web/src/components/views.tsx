@@ -47,6 +47,7 @@ import { Companion } from "./companion";
 import { FileDownloadLink } from "./file-download-link";
 import { MemorySettings } from "./memory-settings";
 import { BudgetSettings } from "./budget-settings";
+import { ContactNumberSettings } from "./contact-number-settings";
 import { ModelSettings } from "./model-settings";
 import { UsageSettings } from "./usage-settings";
 import { RoutineEditor } from "./routine-editor";
@@ -1161,7 +1162,7 @@ export function Settings({
         title="A companion of your own."
         description="A name, a personality, and a little space to keep learning together."
       />
-      <form className="settings-layout" onSubmit={save}>
+      <div className="settings-layout">
         <div className="settings-card">
           <div className="personalization-preview">
             <Companion avatar={draft.avatar} color={draft.color} size={140} />
@@ -1206,13 +1207,15 @@ export function Settings({
               <dt>Agent email</dt>
               <dd>{agent.agentEmail}</dd>
             </div>
-            <div>
-              <dt>Your verified number</dt>
-              <dd>{profile.phone}</dd>
-            </div>
           </dl>
+          <ContactNumberSettings
+            agentName={draft.agentName}
+            ownNumber={profile.phone}
+            routerNumber={agent.connect?.number}
+            onSuccess={feedback.onSuccess}
+          />
         </div>
-        <div className="settings-card stack">
+        <form className="settings-card stack" onSubmit={save}>
           <div className="form-two">
             <label>
               Your name
@@ -1284,10 +1287,10 @@ export function Settings({
           >
             {saving ? <Loader2 size={16} /> : <Check size={16} />}Save changes
           </button>
-        </div>
-      </form>
+        </form>
+      </div>
       <ModelSettings onSuccess={feedback.onSuccess} />
-      <BudgetSettings onSuccess={feedback.onSuccess} />
+      <BudgetSettings onSuccess={feedback.onSuccess} readOnly />
       <UsageSettings />
       <MemorySettings onSuccess={feedback.onSuccess} />
       <div className="danger-zone">

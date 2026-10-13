@@ -904,7 +904,16 @@ export class DemoInkbox implements InkboxProvider {
     if (path === "/identities" && (!init?.method || init.method === "GET"))
       return [...this.identities.values()].map((row) => structuredClone(row));
     if (path.includes("/imessage/assignments"))
-      return [{ remote_number: "+14165550123", status: "active" }];
+      return [
+        {
+          agent_identity_id: new URL(
+            path,
+            "https://preview.example",
+          ).searchParams.get("agent_identity_id"),
+          remote_number: "+14165550123",
+          status: "active",
+        },
+      ];
     if (path === "/identities" && init?.method === "POST") {
       const body = JSON.parse(String(init.body));
       const row = {

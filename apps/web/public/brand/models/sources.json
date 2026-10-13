@@ -1,0 +1,70 @@
+[
+  {
+    "file": "openai.svg",
+    "source": "https://models.dev/logos/openai.svg"
+  },
+  {
+    "file": "anthropic.svg",
+    "source": "https://models.dev/logos/anthropic.svg"
+  },
+  {
+    "file": "google.svg",
+    "source": "https://models.dev/logos/google.svg"
+  },
+  {
+    "file": "deepseek.svg",
+    "source": "https://models.dev/logos/deepseek.svg"
+  },
+  {
+    "file": "mistral.svg",
+    "source": "https://models.dev/logos/mistral.svg"
+  },
+  {
+    "file": "meta.svg",
+    "source": "https://models.dev/logos/meta.svg"
+  },
+  {
+    "file": "xai.svg",
+    "source": "https://models.dev/logos/xai.svg"
+  },
+  {
+    "file": "qwen.svg",
+    "source": "https://models.dev/logos/qwen.svg"
+  },
+  {
+    "file": "moonshotai.svg",
+    "source": "https://models.dev/logos/moonshotai.svg"
+  },
+  {
+    "file": "minimax.svg",
+    "source": "https://models.dev/logos/minimax.svg"
+  },
+  {
+    "file": "cohere.svg",
+    "source": "https://models.dev/logos/cohere.svg"
+  },
+  {
+    "file": "perplexity.svg",
+    "source": "https://models.dev/logos/perplexity.svg"
+  },
+  {
+    "file": "nvidia.svg",
+    "source": "https://models.dev/logos/nvidia.svg"
+  },
+  {
+    "file": "zai.svg",
+    "source": "https://models.dev/logos/zai.svg"
+  },
+  {
+    "file": "openrouter.svg",
+    "source": "https://models.dev/logos/openrouter.svg"
+  },
+  {
+    "file": "amazon-bedrock.svg",
+    "source": "https://models.dev/logos/amazon-bedrock.svg"
+  },
+  {
+    "file": "azure.svg",
+    "source": "https://models.dev/logos/azure.svg"
+  }
+]

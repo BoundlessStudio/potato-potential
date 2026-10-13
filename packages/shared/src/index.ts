@@ -173,6 +173,11 @@ export type Agent = {
   fileTransferVersion?: number;
   connect?: { number: string; command: string; smsLink: string; qr: string };
   sms?: { id: string; number: string; status: string };
+  contactNumber?: {
+    number: string;
+    identityId: string;
+    recipientNumber: string;
+  };
   deletion?: { instance: boolean; identity: boolean };
   updatedAt: string;
 };
@@ -185,6 +190,7 @@ export type PublicAgent = Omit<
   | "phoneChallengeBox"
   | "phoneConfirmation"
   | "checkpointRequests"
+  | "contactNumber"
 >;
 export function publicAgent(agent: Agent): PublicAgent {
   const {
@@ -195,6 +201,7 @@ export function publicAgent(agent: Agent): PublicAgent {
     phoneChallengeBox: _challenge,
     phoneConfirmation: _confirmation,
     checkpointRequests: _receipts,
+    contactNumber: _contactNumber,
     ...safe
   } = agent;
   return safe;

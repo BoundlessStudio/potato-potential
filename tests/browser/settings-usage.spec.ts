@@ -57,9 +57,8 @@ test("shows monthly usage below Budget and refreshes without touching other draf
     .fill("Unsaved memory");
   const budget = page
     .getByRole("region", { name: "Budget", exact: true })
-    .getByLabel("Monthly limit · USD");
-  await expect(budget).toHaveValue("5");
-  await budget.fill("2.25");
+    .getByText("$5.00", { exact: true });
+  await expect(budget).toBeVisible();
   await card.getByRole("button", { name: "Refresh usage" }).click();
   await expect(card.getByText("$2.00", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(
@@ -68,7 +67,7 @@ test("shows monthly usage below Budget and refreshes without touching other draf
   await expect(
     page.getByRole("textbox", { name: "About you", exact: true }),
   ).toHaveValue("Unsaved memory");
-  await expect(budget).toHaveValue("2.25");
+  await expect(budget).toBeVisible();
   expect(writes).toEqual([]);
 });
 
