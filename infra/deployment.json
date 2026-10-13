@@ -5,15 +5,15 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_2hTx41S3Map4c1GuYtQD5kSSiswn",
-    "deploymentUrl": "https://potato-potential-bfxvj4n7d-venatio-studios.vercel.app",
+    "deploymentId": "dpl_4YJLrw5gN5pUhh8WL6q5FA3SkTsk",
+    "deploymentUrl": "https://potato-potential-gk1effb36-venatio-studios.vercel.app",
     "sourceCommit": null,
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow",
-    "sourceCheckoutCommit": "9e59a70dd0764ec58f38c8f436ddee0f4438b91a",
-    "source": "Production snapshot extending phone setup confirmation to iMessage and SMS on the current identity-bound Messages assignment. Only the provider matcher changed from the previous release; ownership, freshness, contact filters and dedicated-number SMS consent checks are preserved. Candidate health and anonymous protection checked before promotion; custom domain verified afterward.",
-    "sourceHash": "9d9504bf7eff404e6f35decb48d9be2ec4e5ec63d9a22f465dc53ffdfca34bf3"
+    "sourceCheckoutCommit": "759d9786f0aee2ecb6eb60da92596699dcb0b0c8",
+    "source": "Verified current production source plus RCS phone confirmation and its transport type. Only packages/shared/src/index.ts and services/control-plane/src/providers.ts changed in the release. Existing ownership, freshness, admission and dedicated SMS consent checks are preserved. Candidate health and anonymous protection passed before promotion; custom domain verified afterward.",
+    "sourceHash": "445fa6a51749b048bfd57b8318596506085b1e1f21b0063b5295221ba570d3ba"
   },
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
@@ -619,7 +619,32 @@
       },
       "database": "No migration needed or applied.",
       "verifiedAt": "2026-10-13T16:26:43.655Z"
+    },
+    "automaticPhoneRcs": {
+      "deploymentId": "dpl_4YJLrw5gN5pUhh8WL6q5FA3SkTsk",
+      "sourceHash": "445fa6a51749b048bfd57b8318596506085b1e1f21b0063b5295221ba570d3ba",
+      "previousDeploymentId": "dpl_CgKLWQMogBRhTBL6EmZj24oxgTdo",
+      "behavior": "Fresh inbound iMessage, SMS or RCS on the active owner-phone Messages assignment confirms setup and records the actual transport. Routed SMS/RCS control words cannot confirm ownership. Existing identity, sender, assignment, freshness and blocked/group checks remain required.",
+      "validation": {
+        "targetedTests": 211,
+        "typecheck": "passed",
+        "backendBuild": "passed",
+        "vercelProductionBuild": "passed",
+        "readOnlyLiveMatcher": "accepted; rejected for later attempt and different phone",
+        "productionDomainMatched": true,
+        "health": {
+          "healthy": true,
+          "demo": false
+        },
+        "signinStatus": 200,
+        "anonymousSetupStatus": 401,
+        "anonymousBetaStatus": 401,
+        "existingReadyAccountVerified": true,
+        "existingConfirmationPreserved": true
+      },
+      "database": "No migration or customer-state repair needed or performed.",
+      "verifiedAt": "2026-10-13T18:40:09.377Z"
     }
   },
-  "validatedAt": "2026-10-13T16:26:43.655Z"
+  "validatedAt": "2026-10-13T18:40:09.377Z"
 }

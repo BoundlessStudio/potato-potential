@@ -61,8 +61,9 @@ afterEach(() => {
 });
 const check = (sms?: string) =>
   new Inkbox("admin").phoneConnection(identity, phone, startedAt, sms);
+const routedTransports = ["imessage", "sms", "rcs"] as const;
 
-it.each(["imessage", "sms"] as const)(
+it.each(routedTransports)(
   "confirms a fresh %s Hi only in the owner's current identity and active assignment",
   async (channel) => {
     messages = [{ ...inbound, service: channel }];
@@ -98,7 +99,7 @@ const invalidMessages = [
   ["missing assignment", { assignment_id: null }],
   ["failed receipt", { status: "failed" }],
   ["reaction", { message_type: "reaction" }],
-  ["unknown transport", { service: "rcs" }],
+  ["unknown transport", { service: "unknown" }],
   ["missing transport", { service: undefined }],
   ["empty message", { content: "  " }],
   ["router connection command", { content: "connect @owner-identity" }],
@@ -106,7 +107,7 @@ const invalidMessages = [
   ["no evidence ID", { id: undefined }],
 ] as const;
 it.each(
-  (["imessage", "sms"] as const).flatMap((channel) =>
+  routedTransports.flatMap((channel) =>
     invalidMessages.map(
       ([label, changes]) => [channel, label, changes] as const,
     ),
@@ -130,7 +131,7 @@ const invalidAssignments = [
   ],
 ] as const;
 it.each(
-  (["imessage", "sms"] as const).flatMap((channel) =>
+  routedTransports.flatMap((channel) =>
     invalidAssignments.map(
       ([label, changes]) => [channel, label, changes] as const,
     ),
@@ -141,29 +142,38 @@ it.each(
   expect((await check()).status).not.toBe("confirmed");
 });
 
-it.each(["START", "STOP", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "HELP"])(
-  "does not treat the routed SMS control word %s as a hello",
-  async (word) => {
+it.each(
+  (["sms", "rcs"] as const).flatMap((channel) =>
+    ["START", "STOP", "UNSUBSCRIBE", "CANCEL", "END", "QUIT", "HELP"].map(
+      (word) => [channel, word] as const,
+    ),
+  ),
+)(
+  "does not treat the routed %s control word %s as a hello",
+  async (channel, word) => {
     messages = [
-      { ...inbound, service: "sms", content: ` ${word.toLowerCase()} ` },
+      { ...inbound, service: channel, content: ` ${word.toLowerCase()} ` },
     ];
     expect(await check()).toEqual({ status: "waiting_message" });
   },
 );
 
-it("uses a routed SMS hello without creating dedicated SMS provisioning or consent", async () => {
-  messages = [{ ...inbound, service: "sms" }];
-  expect(await check("own-number")).toEqual({
-    status: "confirmed",
-    confirmation: { channel: "sms", messageId: inbound.id },
-  });
-  expect(fetch).toHaveBeenCalledTimes(2);
-  expect(
-    fetch.mock.calls.every(([url]) =>
-      new URL(url).pathname.startsWith("/api/v1/imessage/"),
-    ),
-  ).toBe(true);
-});
+it.each(["sms", "rcs"] as const)(
+  "uses a routed %s hello without creating dedicated SMS provisioning or consent",
+  async (channel) => {
+    messages = [{ ...inbound, service: channel }];
+    expect(await check("own-number")).toEqual({
+      status: "confirmed",
+      confirmation: { channel, messageId: inbound.id },
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(
+      fetch.mock.calls.every(([url]) =>
+        new URL(url).pathname.startsWith("/api/v1/imessage/"),
+      ),
+    ).toBe(true);
+  },
+);
 
 it("a connection/contact without an inbound message only advances the guidance", async () => {
   assignments = [];

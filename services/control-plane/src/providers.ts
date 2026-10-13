@@ -1,4 +1,5 @@
 import type {
+  Agent,
   Connection,
   ComputerMetrics,
   ComputerBackup,
@@ -806,7 +807,7 @@ export interface InkboxProvider {
 }
 export type PhoneConnectionResult = {
   status: Exclude<PhoneConnectionStatus, "unavailable">;
-  confirmation?: { channel: "imessage" | "sms"; messageId: string };
+  confirmation?: Agent["phoneConfirmation"];
 };
 export class Inkbox implements InkboxProvider {
   constructor(private key: string) {}
@@ -887,7 +888,9 @@ export class Inkbox implements InkboxProvider {
         message.is_group === false &&
         message.is_blocked === false &&
         message.remote_number === phone &&
-        (message.service === "imessage" || message.service === "sms") &&
+        (message.service === "imessage" ||
+          message.service === "sms" ||
+          message.service === "rcs") &&
         message.message_type === "message" &&
         message.status === "received" &&
         fresh(message.created_at) &&
@@ -895,7 +898,7 @@ export class Inkbox implements InkboxProvider {
         message.content.trim().length > 0 &&
         !/^(?:connect|disconnect)(?:\s|$)/i.test(message.content.trim()) &&
         !(
-          message.service === "sms" &&
+          (message.service === "sms" || message.service === "rcs") &&
           /^(?:START|STOP|UNSUBSCRIBE|CANCEL|END|QUIT|HELP)$/i.test(
             message.content.trim(),
           )
@@ -909,7 +912,7 @@ export class Inkbox implements InkboxProvider {
     if (message)
       return {
         status: "confirmed",
-        // Inkbox can receive SMS on the same identity-bound Messages assignment.
+        // Inkbox can receive SMS or RCS on the same identity-bound Messages assignment.
         // Record its actual transport; dedicated-number consent remains separate.
         confirmation: { channel: message.service, messageId: message.id },
       };

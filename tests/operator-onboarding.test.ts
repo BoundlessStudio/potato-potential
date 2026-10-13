@@ -417,28 +417,40 @@ it("automatically confirms only the authenticated owner's bindings and ignores a
   expect(read).toHaveBeenCalledTimes(1);
 });
 
-it("recovers automatic confirmation after lost queue dispatch without asking for another message", async () => {
-  await call("/onboarding", "verified-owner", input);
-  await lifecycle.provision(operatorId);
-  const read = vi.spyOn(lifecycle.inkbox, "phoneConnection");
-  queue.send.mockRejectedValueOnce(new Error("Lost dispatch"));
-  expect(
-    (await call("/onboarding/phone-connection", "verified-owner", {})).status,
-  ).toBe(500);
-  const verifiedAt = (await repo.agent(operatorId))!.phoneVerifiedAt;
-  const response = await call(
-    "/onboarding/phone-connection",
-    "verified-owner",
-    {},
-  );
-  expect(response.status).toBe(200);
-  const data = await response.json();
-  expect(data.agent.status).toBe("provisioning");
-  expect(data.agent.phoneVerifiedAt).toBe(verifiedAt);
-  expect(data.agent.phoneConfirmation).toBeUndefined();
-  expect(read).toHaveBeenCalledTimes(1);
-  expect(queue.send).toHaveBeenLastCalledWith("provision", operatorId);
-});
+it.each(["imessage", "sms", "rcs"] as const)(
+  "recovers automatic %s confirmation after lost queue dispatch without asking for another message",
+  async (channel) => {
+    await call("/onboarding", "verified-owner", input);
+    await lifecycle.provision(operatorId);
+    const read = vi
+      .spyOn(lifecycle.inkbox, "phoneConnection")
+      .mockResolvedValue({
+        status: "confirmed",
+        confirmation: { channel, messageId: "received-hello" },
+      });
+    queue.send.mockRejectedValueOnce(new Error("Lost dispatch"));
+    expect(
+      (await call("/onboarding/phone-connection", "verified-owner", {})).status,
+    ).toBe(500);
+    const verifiedAt = (await repo.agent(operatorId))!.phoneVerifiedAt;
+    const response = await call(
+      "/onboarding/phone-connection",
+      "verified-owner",
+      {},
+    );
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.agent.status).toBe("provisioning");
+    expect(data.agent.phoneVerifiedAt).toBe(verifiedAt);
+    expect(data.agent.phoneConfirmation).toBeUndefined();
+    expect((await repo.agent(operatorId))!.phoneConfirmation).toEqual({
+      channel,
+      messageId: "received-hello",
+    });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(queue.send).toHaveBeenLastCalledWith("provision", operatorId);
+  },
+);
 
 it("enrolls only the verified operator without requiring a customer invitation", async () => {
   expect((await call("/onboarding", "verified-owner", input)).status).toBe(202);

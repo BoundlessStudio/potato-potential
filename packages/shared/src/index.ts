@@ -102,7 +102,10 @@ export type Agent = {
   phoneChallengeExpires?: string;
   phoneVerifiedAt?: string;
   phoneLink?: PhoneLink;
-  phoneConfirmation?: { channel: "imessage" | "sms"; messageId: string };
+  phoneConfirmation?: {
+    channel: "imessage" | "sms" | "rcs";
+    messageId: string;
+  };
   budgetMicros: number;
   mainSessionId?: string;
   suspended?: boolean;
