@@ -5,15 +5,15 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_8k56ncd9rGj9NuyvnCFXUuMMSKBJ",
-    "deploymentUrl": "https://potato-potential-4jqdikia6-venatio-studios.vercel.app",
-    "sourceCommit": "984e4553f4b6ae366ca64f1b2db64d1d1681e22c",
+    "deploymentId": "dpl_8JNibvjQPdE5TTyR1rZLXF2XGoK8",
+    "deploymentUrl": "https://potato-potential-49d3w8ebc-venatio-studios.vercel.app",
+    "sourceCommit": "7e78a37ad606b10c6a7be029ee1325b95a5c73c0",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow",
-    "sourceCheckoutCommit": "984e4553f4b6ae366ca64f1b2db64d1d1681e22c",
-    "source": "Verified current production source plus the Settings budget display, searchable catalog model picker and manually saved companion contact number. The 31 recorded runtime files changed relative to the verified production baseline. Published candidate and custom-domain checks passed. No customer settings or provider resources were changed during verification.",
-    "sourceHash": "a67adef120ef6ec866ec637f6d975e9b191620f765f58750f7522e1d4a0fda78"
+    "sourceCheckoutCommit": "7e78a37ad606b10c6a7be029ee1325b95a5c73c0",
+    "source": "Verified current production source with the companion contact-number editor merged into the right-hand Settings form. The left companion card displays the saved number. Only the five recorded runtime files changed from the verified production baseline. Save changes submits profile and optional contact changes together; existing saved contact data was confirmed unchanged by read-only checks.",
+    "sourceHash": "042296997bbb640d25595b933fc4280b7654c44df8fca0485cd21fcfbf28f17e"
   },
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
@@ -58,9 +58,9 @@
     "authEmailAppearance": "Magic link or OTP and Confirm sign up updated through the authenticated Supabase dashboard to use the existing transparent public wordmark and #9574ED action button, with inline/bgcolor and stylesheet colors aligned. Both exact HTML sources verified after reload; native ConfirmationURL and Email placeholders retained. Published logo bytes match local artwork and contain transparent pixels. Desktop, 390px, 320px and inline-style previews verified button color, logo loading, readable text, touch target and no horizontal overflow. No recipient emails sent; no web deployment required.",
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 536,
+    "unitAdapterDatabaseTests": 538,
     "mockBrowserTests": 130,
-    "githubChecks": "Settings release 984e455 passed GitHub CI: typecheck, all 536 unit/API/provider/database tests, all 130 browser tests and production build. Published candidate and custom-domain Settings, health, authorization and public assets passed.",
+    "githubChecks": "Merged Settings form release 7e78a37 passed GitHub CI: typecheck, all 538 unit/API/provider/database tests, all 130 browser tests and production build. Candidate and custom-domain merged save, saved-number display, model picker, contact links, health, authorization and public assets passed. The existing live contact record remained unchanged.",
     "securityRecovery": "Migration 202610060001 applied and recorded before the app release. Custom domain resolves to the recorded deployment. GitHub CI passed 89 unit/adapter/database tests, 25 browser tests, typecheck and production build. Live checks verified server-only invitation RPC privileges, invalid acceptance rollback, retry preservation of edited profiles, operator-only endpoints, consumed-token denial after account deletion and fresh invitation acceptance for a new account with the same email. Public beta signup remains normalized and deduplicated without enrolling a customer. Temporary Auth/customer/invitation/beta fixtures removed; no external email or provider computer created. Pause/resume recovery, phone-code locking, onboarding freezing, cold-wake allowance, delayed takeover and signing-key reuse were checked with mocked providers. No desktop image update required.",
     "dependencyAudit": "Production dependencies: zero known vulnerabilities. Full dependency audit flags the development-only concurrently/shell-quote chain under GHSA-pqg4-j6r4-53mv; upgrading shell-quote to 1.11.0 is a separate follow-up.",
     "bigPossibilities": "published after Little possibilities and before the FAQ; Agent37/Hermes computer and multi-tool work, Brave search, Composio connections, image-dependent Perflo paid tools and Inkbox channels explained with seven native technical disclosures; scheduling explanations retained in Little possibilities; keyboard interaction, no-JavaScript disclosures, reduced motion and local 320/390/768/1024/1440 layouts passed; published desktop/390/320 views and all disclosures verified with no page errors, clipped content or application mutations; footer beta CTA, canonical metadata, crawler content, social image and public asset secret checks passed",
@@ -810,7 +810,73 @@
       "migrations": "No database migration or desktop image release required. The contact number uses the existing durable agent JSON record.",
       "limitations": "Published authenticated UI checks used isolated intercepted fixtures, while health and anonymous API guards were checked directly. Save, normalization, isolation, binding, conflict and clear paths were covered by API/provider tests. No real customer contact number, model, profile, memory, computer or provider connection was changed.",
       "verifiedAt": "2026-10-13T22:28:25.124Z"
+    },
+    "mergedContactSettings": {
+      "deploymentId": "dpl_8JNibvjQPdE5TTyR1rZLXF2XGoK8",
+      "deploymentUrl": "https://potato-potential-49d3w8ebc-venatio-studios.vercel.app",
+      "sourceCommit": "7e78a37ad606b10c6a7be029ee1325b95a5c73c0",
+      "previousDeploymentId": "dpl_8k56ncd9rGj9NuyvnCFXUuMMSKBJ",
+      "sourceHash": "042296997bbb640d25595b933fc4280b7654c44df8fca0485cd21fcfbf28f17e",
+      "changedRuntimeFiles": [
+        "apps/web/src/components/contact-number-settings.module.css",
+        "apps/web/src/components/contact-number-settings.tsx",
+        "apps/web/src/components/views.tsx",
+        "services/control-plane/src/app.ts",
+        "services/control-plane/src/contact-number.ts"
+      ],
+      "behavior": "Contact number edits live with name, personality, preferences and timezone in the right-hand form and save through Save changes. The left card displays the persisted number, retaining the previous value during edits and failures. Blank clears the number. Failed contact loads omit the contact update from profile requests. The profile endpoint accepts an optional contact change, validates its number and expected value before remote profile writes, and serializes it with other account changes. The existing contact endpoint remains compatible.",
+      "local": {
+        "typecheck": "passed",
+        "unitApiProviderDatabaseTests": 538,
+        "settingsAndChannelsBrowserChecks": 12,
+        "productionBuild": "passed"
+      },
+      "githubChecks": {
+        "conclusion": "success",
+        "databaseId": 38483319066,
+        "headSha": "7e78a37ad606b10c6a7be029ee1325b95a5c73c0",
+        "status": "completed",
+        "url": "https://github.com/BoundlessStudio/potato-potential/actions/runs/38483319066",
+        "unitApiProviderDatabaseTests": 538,
+        "browserTests": 130,
+        "typecheck": "passed",
+        "productionBuild": "passed"
+      },
+      "production": {
+        "vercel": "READY and promoted",
+        "customDomain": "verified against deployment id",
+        "origin": "https://potato-potential.rgbknights.com",
+        "health": "passed",
+        "anonymousModelAndContactApis": "denied",
+        "providerLogos": 17,
+        "searchAndKeyboard": "passed",
+        "singleDefaultNull": true,
+        "modelSaveReloadAndClear": true,
+        "contactSaveReloadAndClear": true,
+        "contactCallSmsAndMessageLinks": true,
+        "ownAndRouterNumbersRejected": true,
+        "budgetEditingHidden": true,
+        "modelSavePreservesProfileDraft": true,
+        "memoryDraftPreserved": true,
+        "mergedProfileContactSave": true,
+        "savedContactDisplay": true,
+        "widths": [
+          1280,
+          320
+        ],
+        "pageErrors": [],
+        "unexpectedRequests": [],
+        "publicAssetSecretCheck": true,
+        "publicScripts": 12,
+        "applicationMutations": 0,
+        "authenticatedChecks": "intercepted fixtures against the published UI",
+        "savedLiveContactUnchanged": true,
+        "liveCustomerWrites": 0
+      },
+      "migrations": "No database migration, desktop image release or customer data update required.",
+      "limitations": "Authenticated published UI tests use isolated intercepted fixtures. API tests cover combined saves, clearing, omission, wrong/stale numbers and remote profile-write failures. The existing live contact record was read before and after deployment without logging the number or changing it.",
+      "verifiedAt": "2026-10-13T23:26:28.138Z"
     }
   },
-  "validatedAt": "2026-10-13T22:28:25.124Z"
+  "validatedAt": "2026-10-13T23:26:28.138Z"
 }
