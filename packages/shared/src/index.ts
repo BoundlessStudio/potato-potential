@@ -76,6 +76,31 @@ export type PhoneLink = {
   checkedAt?: string;
   status: PhoneConnectionStatus;
 };
+export const assistantModelSchema = z
+  .object({
+    model: z
+      .string()
+      .trim()
+      .min(1)
+      .max(300)
+      .regex(/^[^\x00-\x1f\x7f]+$/),
+    provider: z
+      .string()
+      .trim()
+      .min(1)
+      .max(128)
+      .regex(/^[^\x00-\x1f\x7f]+$/),
+  })
+  .strict();
+export type AssistantModel = z.infer<typeof assistantModelSchema>;
+export type AssistantModelCatalog = {
+  defaultModel: AssistantModel;
+  models: (AssistantModel & { label: string })[];
+};
+export type AssistantModelSettings = AssistantModelCatalog & {
+  model: AssistantModel | null;
+  applied: boolean;
+};
 export type Agent = {
   ownerId: string;
   instanceId?: string;
@@ -107,6 +132,9 @@ export type Agent = {
     messageId: string;
   };
   budgetMicros: number;
+  assistantModel?: AssistantModel | null;
+  assistantModelOriginal?: AssistantModel;
+  assistantModelPending?: boolean;
   mainSessionId?: string;
   suspended?: boolean;
   suspensionOperation?: {

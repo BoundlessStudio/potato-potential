@@ -1,8 +1,106 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { Agent37, Inkbox } from "../services/control-plane/src/providers";
+import { assistantModelScript } from "../services/control-plane/src/assistant-model-config";
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+it("loads Hermes models with stable provider/model selections and excludes private fields", async () => {
+  const fetch = vi.fn().mockResolvedValue(
+    Response.json({
+      object: "list",
+      agent: "hermes",
+      default_model: "default",
+      default_provider: "custom:Agent37",
+      private_token: "hidden",
+      data: [
+        {
+          id: "default",
+          owned_by: "custom:agent37",
+          label: "Managed default",
+          source: "custom",
+        },
+        {
+          id: "openai/gpt-5.2",
+          owned_by: "custom:agent37",
+          label: "GPT-5.2 via Agent37",
+          source: "custom",
+        },
+        {
+          id: "@openai:gpt-5.2",
+          owned_by: "openai",
+          label: "GPT-5.2",
+          source: "catalog",
+          api_key: "hidden",
+        },
+        {
+          id: "fast",
+          owned_by: "aliases",
+          label: "fast -> target",
+          source: "alias",
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  expect(await new Agent37("admin").models("abcdefghij")).toEqual({
+    defaultModel: { model: "default", provider: "custom:agent37" },
+    models: [
+      {
+        model: "default",
+        provider: "custom:agent37",
+        label: "Managed default",
+      },
+      {
+        model: "openai/gpt-5.2",
+        provider: "custom:agent37",
+        label: "GPT-5.2 via Agent37",
+      },
+      { model: "gpt-5.2", provider: "openai", label: "GPT-5.2" },
+    ],
+  });
+  expect(fetch.mock.calls[0][0]).toBe(
+    "https://abcdefghij.agent37.app/v1/models?agent=hermes",
+  );
+  expect(fetch.mock.calls[0][1].headers["X-Agent37-Key"]).toBe("admin");
+});
+it.each([
+  {},
+  { agent: "openclaw", data: [] },
+  { agent: "hermes", default_model: "", default_provider: null, data: [] },
+])("rejects malformed model catalogs", async (body) => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json(body)));
+  await expect(new Agent37("admin").models("abcdefghij")).rejects.toMatchObject(
+    { status: 502, code: "invalid_models" },
+  );
+});
+it("installs persistent model configuration without returning remote configuration errors", async () => {
+  const provider = new Agent37("admin");
+  const exec = vi
+    .spyOn(provider, "exec")
+    .mockResolvedValue({ stdout: "", stderr: "", exit_code: 0 });
+  const write = vi.spyOn(provider, "writeFile").mockResolvedValue();
+  const choice = { model: "openai/gpt-5.2", provider: "custom:agent37" };
+  await provider.setModel("abcdefghij", choice);
+  expect(write).toHaveBeenCalledWith(
+    "abcdefghij",
+    "~/.boundless/assistant-model.py",
+    assistantModelScript,
+  );
+  expect(exec.mock.calls[1][1]).toContain(JSON.stringify(choice));
+  exec
+    .mockResolvedValueOnce({ stdout: "", stderr: "", exit_code: 0 })
+    .mockResolvedValueOnce({
+      stdout: "",
+      stderr: "api_key: secret",
+      exit_code: 1,
+    });
+  await expect(provider.setModel("abcdefghij", null)).rejects.toMatchObject({
+    status: 502,
+    code: "model_save_failed",
+  });
+  await expect(provider.setModel("abcdefghij", null)).resolves.toBeUndefined();
+  expect(exec.mock.lastCall?.[1]).toMatch(/ 'null'$/);
 });
 it("forwards complete cron patches and preserves explicit resets and omitted keys", async () => {
   const fetch = vi

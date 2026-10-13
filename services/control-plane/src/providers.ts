@@ -13,7 +13,11 @@ import type {
   InstanceBudget,
   InstanceUsage,
   PhoneConnectionStatus,
+  AssistantModel,
+  AssistantModelCatalog,
 } from "@boundless/shared";
+import { assistantModelSchema } from "@boundless/shared";
+import { assistantModelScript } from "./assistant-model-config";
 import { HttpError, shellQuote } from "./security";
 import { z } from "zod";
 import {
@@ -127,6 +131,8 @@ export async function checkedFetch(
   return res;
 }
 export interface AgentProvider {
+  models(id: string): Promise<AssistantModelCatalog>;
+  setModel(id: string, model: AssistantModel | null): Promise<void>;
   backups(id: string): Promise<ComputerBackup[]>;
   backup(id: string): Promise<ComputerBackup>;
   restore(id: string, backup: string): Promise<void>;
@@ -376,6 +382,99 @@ export class Agent37 implements AgentProvider {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+  }
+  async models(id: string): Promise<AssistantModelCatalog> {
+    const parsed = z
+      .object({
+        agent: z.literal("hermes"),
+        default_model: z.string().min(1),
+        default_provider: z.string().min(1),
+        data: z
+          .array(
+            z.object({
+              id: z.string().min(1),
+              owned_by: z.string().min(1),
+              label: z.string().min(1),
+              source: z.enum(["catalog", "custom", "current", "alias"]),
+            }),
+          )
+          .max(10000),
+      })
+      .safeParse(await this.json(this.agent(id, "/models?agent=hermes")));
+    if (!parsed.success)
+      throw new HttpError(
+        502,
+        "invalid_models",
+        "Couldn’t read the available assistant models.",
+      );
+    const catalog = parsed.data;
+    const normalizeProvider = (provider: string) =>
+      provider.toLowerCase().replaceAll(" ", "-");
+    const parsedDefault = assistantModelSchema.safeParse({
+      model: catalog.default_model,
+      provider: normalizeProvider(catalog.default_provider),
+    });
+    if (!parsedDefault.success)
+      throw new HttpError(
+        502,
+        "invalid_models",
+        "Couldn’t read the current assistant model.",
+      );
+    const defaultModel = parsedDefault.data;
+    const models: AssistantModelCatalog["models"] = [];
+    for (const entry of catalog.data) {
+      // Aliases do not identify a provider and can change targets independently.
+      if (entry.source === "alias") continue;
+      const match = /^@([^:]+):(.+)$/.exec(entry.id);
+      const selection = assistantModelSchema.safeParse({
+        model: match ? match[2] : entry.id,
+        provider: normalizeProvider(match ? match[1] : entry.owned_by),
+      });
+      if (!selection.success) continue;
+      if (
+        !models.some(
+          (row) =>
+            row.model === selection.data.model &&
+            row.provider === selection.data.provider,
+        )
+      )
+        models.push({ ...selection.data, label: entry.label });
+    }
+    if (
+      !models.some(
+        (row) =>
+          row.model === defaultModel.model &&
+          row.provider === defaultModel.provider,
+      )
+    )
+      models.unshift({ ...defaultModel, label: defaultModel.model });
+    return { defaultModel, models };
+  }
+  async setModel(id: string, model: AssistantModel | null) {
+    const selection = assistantModelSchema.nullable().parse(model);
+    const prepared = await this.exec(id, "mkdir -p ~/.boundless");
+    if (prepared.exit_code)
+      throw new HttpError(
+        502,
+        "model_save_failed",
+        "Couldn’t prepare the assistant model setting.",
+      );
+    await this.writeFile(
+      id,
+      "~/.boundless/assistant-model.py",
+      assistantModelScript,
+    );
+    const result = await this.exec(
+      id,
+      `/usr/local/lib/hermes/hermes-agent/venv/bin/python ~/.boundless/assistant-model.py ${shellQuote(JSON.stringify(selection))}`,
+    );
+    // Never forward stderr: config parsing errors can contain credentials.
+    if (result.exit_code)
+      throw new HttpError(
+        502,
+        "model_save_failed",
+        "Couldn’t apply the assistant model. Reload and try again.",
+      );
   }
   async listFiles(id: string, path: string): Promise<FileListing> {
     path = uploadDirectory(path);

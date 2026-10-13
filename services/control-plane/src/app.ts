@@ -40,6 +40,7 @@ import { registerSignInRoutes } from "./sign-in";
 import { registerFileRoutes, cleanUploadsLocked } from "./files";
 import { registerBudgetRoutes } from "./budget";
 import { registerUsageRoutes } from "./usage";
+import { applyAssistantModel, registerModelRoutes } from "./assistant-model";
 import { FILE_TRANSFER_VERSION } from "./file-transfer";
 import {
   registerAgentComputerRoutes,
@@ -100,6 +101,11 @@ export async function reconcileLocked(dep: Dependencies, ownerId: string) {
   )
     return true;
   if (accessPaused(agent) || computerBusy(agent)) return;
+  if (agent.assistantModelPending) {
+    await applyAssistantModel(dep.a37, agent);
+    agent.assistantModelPending = false;
+    await dep.repo.saveAgent(agent);
+  }
   if (
     (agent.computerHelperVersion || 0) < COMPUTER_HELPER_VERSION ||
     (agent.workspaceHelperVersion || 0) < WORKSPACE_HELPER_VERSION ||
@@ -438,6 +444,7 @@ export function createApp(dep: Dependencies) {
   registerFileRoutes(app, dep, (req) => actor(req).id, ready);
   registerBudgetRoutes(app, dep, (req) => actor(req).id, account);
   registerUsageRoutes(app, dep, (req) => actor(req).id, account);
+  registerModelRoutes(app, dep, (req) => actor(req).id, ready);
 
   app.get("/api/me", async (req, res) => {
     const profile = await repo.profile(actor(req).id);
@@ -448,7 +455,7 @@ export function createApp(dep: Dependencies) {
       await queue.send("provision", actor(req).id).catch(() => {});
     if (agent?.status === "deleting")
       await queue.send("cleanup", actor(req).id).catch(() => {});
-    if (agent && suspensionPending(agent))
+    if (agent && (suspensionPending(agent) || agent.assistantModelPending))
       await queue.send("reconcile", actor(req).id).catch(() => {});
     if (
       agent &&

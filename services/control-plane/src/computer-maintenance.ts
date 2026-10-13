@@ -3,6 +3,7 @@ import type { Dependencies } from "./app";
 import { HttpError } from "./security";
 import { accessPaused } from "./suspension";
 import { maintainBackupLocked } from "./computer-backups";
+import { applyAssistantModel } from "./assistant-model";
 
 export const bootCommand = `node -e 'const fs=require("node:fs");const s=fs.statSync("/proc/1");const t=fs.readFileSync("/proc/1/stat","utf8").split(") ").pop().split(" ")[19];console.log(s.ctimeMs+":"+s.mtimeMs+":"+t)'`;
 export const screenCommand = "DISPLAY=:99 /usr/bin/xdpyinfo | grep dimensions";
@@ -151,6 +152,8 @@ export async function maintainComputerLocked(
         "The updated computer has an unexpected screen size. Ask the operator to check it.",
       );
     agent.computerScreen = { width, height };
+    await applyAssistantModel(dep.a37, agent);
+    agent.assistantModelPending = false;
     op.phase = "completed";
     op.finishedAt = new Date().toISOString();
     op.error = undefined;

@@ -47,6 +47,7 @@ import { Companion } from "./companion";
 import { FileDownloadLink } from "./file-download-link";
 import { MemorySettings } from "./memory-settings";
 import { BudgetSettings } from "./budget-settings";
+import { ModelSettings } from "./model-settings";
 import { UsageSettings } from "./usage-settings";
 import { RoutineEditor } from "./routine-editor";
 
@@ -1285,6 +1286,7 @@ export function Settings({
           </button>
         </div>
       </form>
+      <ModelSettings onSuccess={feedback.onSuccess} />
       <BudgetSettings onSuccess={feedback.onSuccess} />
       <UsageSettings />
       <MemorySettings onSuccess={feedback.onSuccess} />

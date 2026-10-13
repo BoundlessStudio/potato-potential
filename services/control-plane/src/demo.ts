@@ -15,6 +15,8 @@ import type {
   FileUpload,
   InstanceBudget,
   InstanceUsage,
+  AssistantModel,
+  AssistantModelCatalog,
 } from "@boundless/shared";
 import { ProviderError } from "./providers";
 import { MemoryRepository } from "./repository";
@@ -30,6 +32,63 @@ export const DEMO_NEW_USER = "22222222-2222-4222-8222-222222222222";
 export const DEMO_EMAIL = "alex@example.com";
 const hex = () => randomBytes(16).toString("hex");
 export class DemoAgent37 implements AgentProvider {
+  async models(id: string): Promise<AssistantModelCatalog> {
+    await this.instance(id);
+    const stored = this.files.get(`${id}:~/.hermes/assistant-model.json`);
+    const defaultModel: AssistantModel = stored
+      ? JSON.parse(stored.content)
+      : { model: "default", provider: "custom:agent37" };
+    const models = [
+      {
+        model: "default",
+        provider: "custom:agent37",
+        label: "Agent37 default",
+      },
+      {
+        model: "anthropic/claude-sonnet-4-5",
+        provider: "custom:agent37",
+        label: "Claude Sonnet 4.5",
+      },
+      { model: "openai/gpt-5.2", provider: "custom:agent37", label: "GPT-5.2" },
+    ];
+    if (
+      !models.some(
+        (row) =>
+          row.model === defaultModel.model &&
+          row.provider === defaultModel.provider,
+      )
+    )
+      models.push({ ...defaultModel, label: defaultModel.model });
+    return { defaultModel, models };
+  }
+  async setModel(id: string, model: AssistantModel | null) {
+    await this.instance(id);
+    const snapshotKey = `${id}:~/.boundless/assistant-model-original.json`;
+    if (model && !this.files.has(snapshotKey))
+      this.files.set(snapshotKey, {
+        content: JSON.stringify((await this.models(id)).defaultModel),
+        modified: Date.now(),
+      });
+    const selection =
+      model ||
+      JSON.parse(
+        this.files.get(snapshotKey)?.content ||
+          JSON.stringify((await this.models(id)).defaultModel),
+      );
+    this.files.set(`${id}:~/.hermes/assistant-model.json`, {
+      content: JSON.stringify(selection),
+      modified: Date.now(),
+    });
+    if (model)
+      this.files.set(`${id}:~/.boundless/assistant-model.json`, {
+        content: JSON.stringify(model),
+        modified: Date.now(),
+      });
+    else {
+      this.files.delete(`${id}:~/.boundless/assistant-model.json`);
+      this.files.delete(snapshotKey);
+    }
+  }
   backupRows = new Map<string, ComputerBackup[]>();
   private backupFiles = new Map<
     string,
@@ -393,6 +452,8 @@ export class DemoAgent37 implements AgentProvider {
     const instance = await this.instance(id);
     instance.boot = (instance.boot || 1) + 1;
     instance.status = "running";
+    const saved = this.files.get(`${id}:~/.boundless/assistant-model.json`);
+    if (saved) await this.setModel(id, JSON.parse(saved.content));
   }
   async update(id: string, template: string) {
     const instance = await this.instance(id);
@@ -942,6 +1003,7 @@ export async function seedDemo(
     completed: ["identity", "computer", "phone", "persona", "plugin", "ready"],
     status: "ready",
     budgetMicros: 5_000_000,
+    assistantModel: null,
     mainSessionId,
     updatedAt: createdAt,
     connect: {

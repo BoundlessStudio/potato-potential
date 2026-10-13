@@ -11,6 +11,7 @@ import type { Repository } from "./repository";
 import type { AgentProvider, InkboxProvider } from "./providers";
 import { HttpError, hash, seal, shellQuote, token, unseal } from "./security";
 import { accessPaused } from "./suspension";
+import { applyAssistantModel } from "./assistant-model";
 import { COMPUTER_HELPER_VERSION } from "./computer-services";
 import {
   FILE_TRANSFER_VERSION,
@@ -124,6 +125,7 @@ export class Lifecycle {
       completed: [],
       status: "new",
       budgetMicros: this.config.budget,
+      assistantModel: null,
       updatedAt: new Date().toISOString(),
     };
     await this.repo.saveAgent(agent);
@@ -398,6 +400,8 @@ export class Lifecycle {
   }
   async restoreConfiguration(profile: Profile, agent: Agent) {
     await this.configurePersona(profile, agent);
+    await applyAssistantModel(this.a37, agent, true);
+    agent.assistantModelPending = false;
     await this.plugin(agent);
   }
   async configurePersona(profile: Profile, agent: Agent) {
