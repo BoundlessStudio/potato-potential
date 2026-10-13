@@ -5,15 +5,15 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_4YJLrw5gN5pUhh8WL6q5FA3SkTsk",
-    "deploymentUrl": "https://potato-potential-gk1effb36-venatio-studios.vercel.app",
-    "sourceCommit": null,
+    "deploymentId": "dpl_2GnAxopzvPe6p78F4WpowYzmVEwA",
+    "deploymentUrl": "https://potato-potential-nm5ub1qds-venatio-studios.vercel.app",
+    "sourceCommit": "cf23573ffbd8f0a0594f2f143511a9fcb889ee48",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow",
-    "sourceCheckoutCommit": "759d9786f0aee2ecb6eb60da92596699dcb0b0c8",
-    "source": "Verified current production source plus RCS phone confirmation and its transport type. Only packages/shared/src/index.ts and services/control-plane/src/providers.ts changed in the release. Existing ownership, freshness, admission and dedicated SMS consent checks are preserved. Candidate health and anonymous protection passed before promotion; custom domain verified afterward.",
-    "sourceHash": "445fa6a51749b048bfd57b8318596506085b1e1f21b0063b5295221ba570d3ba"
+    "sourceCheckoutCommit": "cf23573ffbd8f0a0594f2f143511a9fcb889ee48",
+    "source": "Verified current production source plus Default assistant model settings. The existing deployed RCS confirmation fix is preserved. Only the eleven recorded model-setting runtime files changed relative to the verified production baseline. Candidate and custom-domain health, anonymous authorization, desktop/mobile UI and public asset checks passed. No customer model choice was changed during verification.",
+    "sourceHash": "8c7f8181182dff6edd2e99952bf5393be502c5181d4a6fa0bcd4f37781710871"
   },
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
@@ -58,9 +58,9 @@
     "authEmailAppearance": "Magic link or OTP and Confirm sign up updated through the authenticated Supabase dashboard to use the existing transparent public wordmark and #9574ED action button, with inline/bgcolor and stylesheet colors aligned. Both exact HTML sources verified after reload; native ConfirmationURL and Email placeholders retained. Published logo bytes match local artwork and contain transparent pixels. Desktop, 390px, 320px and inline-style previews verified button color, logo loading, readable text, touch target and no horizontal overflow. No recipient emails sent; no web deployment required.",
     "productionBuild": "passed",
     "typecheck": "passed",
-    "unitAdapterDatabaseTests": 378,
-    "mockBrowserTests": 117,
-    "githubChecks": "The release passed local typecheck, 378 unit/API/database tests, all 117 browser tests, local and Vercel production builds, and candidate/custom-domain browser checks. GitHub Actions validates the pushed source.",
+    "unitAdapterDatabaseTests": 530,
+    "mockBrowserTests": 127,
+    "githubChecks": "The model-setting release passed GitHub CI on cf23573: typecheck, all 530 unit/API/provider/database/configuration tests, all 127 browser tests and production build. Candidate and custom-domain health, authorization, desktop/mobile settings and public asset checks passed.",
     "securityRecovery": "Migration 202610060001 applied and recorded before the app release. Custom domain resolves to the recorded deployment. GitHub CI passed 89 unit/adapter/database tests, 25 browser tests, typecheck and production build. Live checks verified server-only invitation RPC privileges, invalid acceptance rollback, retry preservation of edited profiles, operator-only endpoints, consumed-token denial after account deletion and fresh invitation acceptance for a new account with the same email. Public beta signup remains normalized and deduplicated without enrolling a customer. Temporary Auth/customer/invitation/beta fixtures removed; no external email or provider computer created. Pause/resume recovery, phone-code locking, onboarding freezing, cold-wake allowance, delayed takeover and signing-key reuse were checked with mocked providers. No desktop image update required.",
     "dependencyAudit": "Production dependencies: zero known vulnerabilities. Full dependency audit flags the development-only concurrently/shell-quote chain under GHSA-pqg4-j6r4-53mv; upgrading shell-quote to 1.11.0 is a separate follow-up.",
     "bigPossibilities": "published after Little possibilities and before the FAQ; Agent37/Hermes computer and multi-tool work, Brave search, Composio connections, image-dependent Perflo paid tools and Inkbox channels explained with seven native technical disclosures; scheduling explanations retained in Little possibilities; keyboard interaction, no-JavaScript disclosures, reduced motion and local 320/390/768/1024/1440 layouts passed; published desktop/390/320 views and all disclosures verified with no page errors, clipped content or application mutations; footer beta CTA, canonical metadata, crawler content, social image and public asset secret checks passed",
@@ -644,7 +644,82 @@
       },
       "database": "No migration or customer-state repair needed or performed.",
       "verifiedAt": "2026-10-13T18:40:09.377Z"
+    },
+    "defaultAssistantModelRelease": {
+      "deploymentId": "dpl_2GnAxopzvPe6p78F4WpowYzmVEwA",
+      "deploymentUrl": "https://potato-potential-nm5ub1qds-venatio-studios.vercel.app",
+      "sourceCommit": "cf23573ffbd8f0a0594f2f143511a9fcb889ee48",
+      "previousDeploymentId": "dpl_4YJLrw5gN5pUhh8WL6q5FA3SkTsk",
+      "sourceHash": "8c7f8181182dff6edd2e99952bf5393be502c5181d4a6fa0bcd4f37781710871",
+      "changedRuntimeFiles": [
+        "apps/web/src/components/views.tsx",
+        "apps/web/src/components/model-settings.tsx",
+        "apps/web/src/components/model-settings.module.css",
+        "packages/shared/src/index.ts",
+        "services/control-plane/src/app.ts",
+        "services/control-plane/src/providers.ts",
+        "services/control-plane/src/demo.ts",
+        "services/control-plane/src/lifecycle.ts",
+        "services/control-plane/src/computer-maintenance.ts",
+        "services/control-plane/src/assistant-model.ts",
+        "services/control-plane/src/assistant-model-config.ts"
+      ],
+      "behavior": {
+        "default": null,
+        "scope": "Hermes web chat, iMessage, SMS, email and Routine runs; later turns in existing conversations inherit the default unless they have an override.",
+        "persistence": "Account intent is durable before remote writes; reconciliation retries interrupted saves and clears. A computer restart hook reapplies explicit choices after managed credential refresh, and maintenance/restore recovery reapplies the account choice before completion.",
+        "clear": "Choosing Use computer default saves null, restores the prior native model routing keys and configuration shape, and removes the model helper, saved override, original-routing snapshot and restart hook block. Unrelated settings and refreshed managed credentials are preserved."
+      },
+      "local": {
+        "typecheck": "passed",
+        "unitApiProviderDatabaseTests": 530,
+        "settingsBrowserChecks": 12,
+        "productionBuild": "passed",
+        "pythonConfigurationSaveBootAndClear": "passed"
+      },
+      "production": {
+        "vercel": "READY and promoted",
+        "customDomain": "verified against deployment id",
+        "origin": "https://potato-potential.rgbknights.com",
+        "health": "passed",
+        "anonymousModelApi": "denied",
+        "defaultNull": true,
+        "saveReloadAndClear": true,
+        "unrelatedDraftsPreserved": true,
+        "widths": [
+          1280,
+          320
+        ],
+        "pageErrors": [],
+        "unexpectedRequests": [],
+        "publicAssetSecretCheck": true,
+        "publicScripts": 12,
+        "applicationMutations": 0,
+        "authenticatedChecks": "intercepted fixtures against the published UI",
+        "liveProviderCatalog": {
+          "liveProviderCatalog": "passed",
+          "availableModels": 375,
+          "nativeDefaultListed": true,
+          "providerWrites": 0,
+          "databaseWrites": 0,
+          "modelCalls": 0
+        }
+      },
+      "githubChecks": {
+        "runId": 38470473066,
+        "sourceCommit": "cf23573ffbd8f0a0594f2f143511a9fcb889ee48",
+        "status": "completed",
+        "conclusion": "success",
+        "unitApiProviderDatabaseTests": 530,
+        "browserTests": 127,
+        "typecheck": "passed",
+        "productionBuild": "passed",
+        "url": "https://github.com/BoundlessStudio/potato-potential/actions/runs/38470473066"
+      },
+      "migrations": "No database migration or desktop image release required; account state is stored in the existing JSON record.",
+      "limitations": "Published save/reload/clear UI used isolated intercepted fixtures. Native persistence and reset paths used provider/configuration fixtures. The real provider check read the model catalog only; no live customer model, backup, restore or Routine was changed.",
+      "verifiedAt": "2026-10-13T21:33:44.320Z"
     }
   },
-  "validatedAt": "2026-10-13T18:40:09.377Z"
+  "validatedAt": "2026-10-13T21:33:44.320Z"
 }
