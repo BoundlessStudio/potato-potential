@@ -111,7 +111,7 @@ export function ContactNumberField({
       />
       <p id="companion-contact-number-help" className="fine-print">
         Copy the number from {agentName}’s saved contact card in Messages. It’s
-        used for Call and SMS links. Leave blank to remove it.
+        used for calls and messages. Leave blank to remove it.
       </p>
       {contact.loading && (
         <p role="status" className="fine-print">

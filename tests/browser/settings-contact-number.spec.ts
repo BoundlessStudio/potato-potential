@@ -110,14 +110,11 @@ test("saves the contact number with the profile, displays only the saved number 
   ).toContainText(number);
   await expect(
     modal.getByRole("region", { name: "SMS", exact: true }),
-  ).toContainText(number);
+  ).toHaveCount(0);
   await expect(
     modal.getByRole("link", { name: "Call", exact: true }),
   ).toHaveAttribute("href", `tel:${number}`);
-  await expect(modal.getByRole("link", { name: "Open SMS" })).toHaveAttribute(
-    "href",
-    `sms:${number}`,
-  );
+  await expect(modal.getByRole("link", { name: "Open SMS" })).toHaveCount(0);
   await expect(
     modal.getByRole("link", { name: "Open Messages" }),
   ).toHaveAttribute("href", `sms:${number}`);

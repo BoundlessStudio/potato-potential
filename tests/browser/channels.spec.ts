@@ -195,7 +195,7 @@ test("uses the router only to connect shared messaging and calls", async ({
   );
 });
 
-test("calls the dedicated number independently of shared iMessage setup and keeps SMS distinct", async ({
+test("calls the dedicated number independently of shared iMessage setup without a separate SMS card", async ({
   page,
   context,
 }) => {
@@ -224,11 +224,8 @@ test("calls the dedicated number independently of shared iMessage setup and keep
   ).toContainText("Call this dedicated number");
   await expect(
     modal.getByRole("region", { name: "SMS", exact: true }),
-  ).toContainText("Setup in progress");
-  await expect(modal.getByRole("link", { name: "Open SMS" })).toHaveAttribute(
-    "href",
-    "sms:+14165550199",
-  );
+  ).toHaveCount(0);
+  await expect(modal.getByRole("link", { name: "Open SMS" })).toHaveCount(0);
   await modal.getByRole("button", { name: "Copy phone number" }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     "+14165550199",

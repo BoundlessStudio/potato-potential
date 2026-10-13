@@ -226,7 +226,6 @@ export function ChannelsDialog({
   const sms = !loading.contact && !errors.contact ? status?.sms : null;
   const contactNumber = connected ? status?.contactNumber : null;
   const callNumber = contactNumber || sms?.number;
-  const textNumber = contactNumber || sms?.number;
   // The connect details belong to Inkbox's router, not the shared agent line.
   // Inkbox sends that line's contact card to the user and omits it from the API.
   const messageAddress =
@@ -391,23 +390,6 @@ export function ChannelsDialog({
                       : undefined
                   }
                 />
-                {textNumber && (
-                  <ContactCard
-                    icon={<MessageCircle size={19} />}
-                    title="SMS"
-                    value={textNumber}
-                    description={
-                      contactNumber
-                        ? `Send a text message to ${agentName} at the number you saved from their contact card.`
-                        : ["active", "ready"].includes(sms!.status)
-                          ? "Send a text message to this dedicated number."
-                          : "Setup in progress for this dedicated text-message number."
-                    }
-                    action="Open SMS"
-                    href={`sms:${textNumber}`}
-                    onCopy={() => void copy(textNumber, "SMS number")}
-                  />
-                )}
               </div>
               <p className="channel-app-note">
                 <ArrowUpRight size={13} aria-hidden="true" /> Contact actions
