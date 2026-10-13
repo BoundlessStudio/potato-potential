@@ -199,11 +199,12 @@ it("keeps closure intent when dispatch fails and recovers it from account pollin
   expect(await repo.profile(DEMO_USER)).not.toBeNull();
 });
 
-it("serializes a phone-code refresh and cleanup so deletion progress cannot be overwritten", async () => {
+it("serializes automatic phone confirmation and cleanup so deletion progress cannot be overwritten", async () => {
   const agent = (await repo.agent(DEMO_USER))!;
   agent.status = "awaiting_phone";
   agent.phase = "phone";
-  agent.phoneChallengeBox = undefined;
+  agent.phoneVerifiedAt = undefined;
+  agent.phoneLink = undefined;
   await repo.saveAgent(agent);
   let entered!: () => void, release!: () => void;
   const gate = new Promise<void>((resolve) => {
@@ -214,13 +215,13 @@ it("serializes a phone-code refresh and cleanup so deletion progress cannot be o
   });
   const save = repo.saveAgent.bind(repo);
   vi.spyOn(repo, "saveAgent").mockImplementation(async (row) => {
-    if (row.status === "awaiting_phone" && row.phoneChallengeBox) {
+    if (row.status === "awaiting_phone" && row.phoneLink) {
       entered();
       await gate;
     }
     await save(row);
   });
-  const polling = call("/me");
+  const polling = call("/onboarding/phone-connection", "POST");
   await waiting;
   let cleanupEntered = false;
   const cleanup = repo.locked(DEMO_USER, async () => {

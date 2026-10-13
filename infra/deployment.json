@@ -5,15 +5,15 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_9Bb36t7bpP9aVTcBnuwQr8KUxRN5",
-    "deploymentUrl": "https://potato-potential-j5yoe0753-venatio-studios.vercel.app",
+    "deploymentId": "dpl_2hTx41S3Map4c1GuYtQD5kSSiswn",
+    "deploymentUrl": "https://potato-potential-bfxvj4n7d-venatio-studios.vercel.app",
     "sourceCommit": null,
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow",
-    "sourceCheckoutCommit": "3696565449faf8635c64966cea49461d71d0b6da",
-    "source": "Verified production application snapshot with the Inkbox shared-contact routing fix. The source hash identifies the exact uploaded inputs; application source and regression tests are synchronized to GitHub in this release.",
-    "sourceHash": "7f0b8e40898af77cf78dddad5a878d862821235a95786f9812c7e6f358d3e8f0"
+    "sourceCheckoutCommit": "9e59a70dd0764ec58f38c8f436ddee0f4438b91a",
+    "source": "Production snapshot extending phone setup confirmation to iMessage and SMS on the current identity-bound Messages assignment. Only the provider matcher changed from the previous release; ownership, freshness, contact filters and dedicated-number SMS consent checks are preserved. Candidate health and anonymous protection checked before promotion; custom domain verified afterward.",
+    "sourceHash": "9d9504bf7eff404e6f35decb48d9be2ec4e5ec63d9a22f465dc53ffdfca34bf3"
   },
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
@@ -52,8 +52,9 @@
     "port": 587,
     "security": "STARTTLS"
   },
-  "validatedOn": "2026-10-08",
+  "validatedOn": "2026-10-13",
   "validation": {
+    "betaApprovalCapacity": "Signup accepts one request per normalized email, with no total signup cap or IP quota. Approvals are capped at ten occupied places, counting enrolled customers, accepted invitations linked to current accounts, active invitations and approved delivery retries. A shared database-backed lease serializes approvals across emails. Passed 103 targeted API/security/account tests, 19 browser checks, typecheck and local/Vercel production builds. Regression checks covered 200 signups, the eleventh approval, concurrent final-place approvals, duplicate reservations, delivery/write failures, retries, expiry and removal. Candidate health and public signup passed before promotion. The live beta page shows 1 / 10 places filled and retains the requested existing customer as Accepted. No recipient emails were sent during validation.",
     "authEmailAppearance": "Magic link or OTP and Confirm sign up updated through the authenticated Supabase dashboard to use the existing transparent public wordmark and #9574ED action button, with inline/bgcolor and stylesheet colors aligned. Both exact HTML sources verified after reload; native ConfirmationURL and Email placeholders retained. Published logo bytes match local artwork and contain transparent pixels. Desktop, 390px, 320px and inline-style previews verified button color, logo loading, readable text, touch target and no horizontal overflow. No recipient emails sent; no web deployment required.",
     "productionBuild": "passed",
     "typecheck": "passed",
@@ -565,7 +566,60 @@
         "unexpectedRequests": []
       },
       "migrations": "No database migration needed or applied for this fix."
+    },
+    "automaticPhoneLinking": {
+      "deploymentId": "dpl_GfQG3TAi39FcVvX1i2tBsGEvsPKM",
+      "sourceHash": "e8671b6e5d8402dfd646db27fb0743c6ad7c04ec08dfd3f58d5fb27138278957",
+      "behavior": "Connect in Messages, then send Hi in the new agent conversation. Fresh owner-only inbound confirmation is detected automatically without typed codes or a check button. Retries/reloads preserve the attempt, accepted confirmation and provider ownership; dedicated SMS still requires recipient START and current consent.",
+      "local": {
+        "unitApiProviderDatabaseTests": 430,
+        "targetedBrowserChecks": 22,
+        "typecheck": "passed",
+        "productionBuild": "passed",
+        "mobileWidths": [
+          320,
+          390
+        ]
+      },
+      "production": {
+        "state": "READY and promoted",
+        "customDomain": "verified against deployment id",
+        "health": {
+          "healthy": true,
+          "demo": false
+        },
+        "publishedAutomaticPhoneFlow": true,
+        "manualCodeButtonRemoved": true,
+        "anonymousConnectionCheck": "401",
+        "customerAccountsAccessed": false
+      },
+      "database": "No migration needed or applied.",
+      "verifiedAt": "2026-10-13T03:32:02.805Z"
+    },
+    "automaticPhoneTransports": {
+      "deploymentId": "dpl_2hTx41S3Map4c1GuYtQD5kSSiswn",
+      "sourceHash": "9d9504bf7eff404e6f35decb48d9be2ec4e5ec63d9a22f465dc53ffdfca34bf3",
+      "previousDeploymentId": "dpl_GfQG3TAi39FcVvX1i2tBsGEvsPKM",
+      "behavior": "Fresh inbound iMessage or SMS on the active owner-phone assignment confirms setup and records its actual transport. Wrong phones/identities/assignments, stale or blocked/group messages, unknown transports, router commands and SMS control words are rejected. Dedicated-number SMS continues to require recipient START and current consent.",
+      "validation": {
+        "targetedTests": 207,
+        "typecheck": "passed",
+        "backendBuild": "passed",
+        "vercelProductionBuild": "passed",
+        "readOnlyLiveMatcher": "Accepted the existing routed SMS and rejected it for a later attempt; no new messages sent.",
+        "productionDomainMatched": true,
+        "health": {
+          "healthy": true,
+          "demo": false
+        },
+        "signinStatus": 200,
+        "anonymousSetupStatus": 401,
+        "anonymousBetaStatus": 401,
+        "repairedAccountsStillReady": true
+      },
+      "database": "No migration needed or applied.",
+      "verifiedAt": "2026-10-13T16:26:43.655Z"
     }
   },
-  "validatedAt": "2026-10-08T22:53:51.448Z"
+  "validatedAt": "2026-10-13T16:26:43.655Z"
 }

@@ -68,6 +68,7 @@ import { Brand, Companion } from "@/components/companion";
 import { Computer } from "@/components/computer";
 import { ComputerWorkspace } from "@/components/computer-workspace";
 import { PhoneField } from "@/components/phone-field";
+import { PhoneConnection } from "@/components/phone-connection";
 import { FeatureOverview } from "@/components/feature-overview";
 import { PublicEntry } from "@/components/public-entry";
 import { ChatUploads, useChatUploads } from "@/components/chat-uploads";
@@ -107,6 +108,13 @@ export default function Home() {
   const [signedIn, setSignedIn] = useState(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [agent, setAgent] = useState<PublicAgent | null>(null);
+  const phoneConnectionChanged = useCallback((next: PublicAgent) => {
+    setAgent((current) =>
+      current?.ownerId === next.ownerId && current.status === "awaiting_phone"
+        ? next
+        : current,
+    );
+  }, []);
   const [operator, setOperator] = useState(false);
   const [accountEmail, setAccountEmail] = useState("");
   const [computerRequestId, setComputerRequestId] = useState<string>();
@@ -313,7 +321,11 @@ export default function Home() {
       document.title = `${tab.charAt(0).toUpperCase() + tab.slice(1)} — Potato Potential`;
   }, [signedIn, tab]);
   useEffect(() => {
-    if (!signedIn || (!accountClosing && (!agent || agent.status === "ready")))
+    if (
+      !signedIn ||
+      agent?.status === "awaiting_phone" ||
+      (!accountClosing && (!agent || agent.status === "ready"))
+    )
       return;
     const timer = setInterval(() => void loadAccount(), 1500);
     return () => clearInterval(timer);
@@ -661,14 +673,7 @@ export default function Home() {
               onError(err(error));
             }
           }}
-          verify={async () => {
-            try {
-              await api("/onboarding/verify-phone", "POST");
-              await loadAccount();
-            } catch (error) {
-              onError(err(error));
-            }
-          }}
+          phoneConnectionChanged={phoneConnectionChanged}
         />
         {toast && <Toast toast={toast} close={() => setToast(null)} />}
       </>
@@ -1660,14 +1665,14 @@ function Setup({
   profile,
   agent,
   retry,
-  verify,
+  phoneConnectionChanged,
   closeAccount,
   onError,
 }: {
   profile: Profile | null;
   agent: PublicAgent;
   retry: () => Promise<void>;
-  verify: () => Promise<void>;
+  phoneConnectionChanged: (agent: PublicAgent) => void;
   closeAccount: () => Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -1703,12 +1708,14 @@ function Setup({
             ? "Saying goodbye, carefully."
             : `Making room for ${profile?.agentName || "your companion"}.`}
         </h1>
-        <p>
+        <p role={agent.phoneVerifiedAt ? "status" : undefined}>
           {deleting
             ? "Your computer and messaging identity are removed before your account and workspace data. You can return here to check progress."
             : agent.status === "awaiting_phone"
               ? "A little hello from your phone, and we’re on our way."
-              : "You can come back to this page. Setup will pick up where it left off."}
+              : agent.phoneVerifiedAt
+                ? "Phone confirmed. Finishing setup for your companion."
+                : "You can come back to this page. Setup will pick up where it left off."}
         </p>
         <div className="setup-steps">
           {deleting
@@ -1742,53 +1749,11 @@ function Setup({
               ))}
         </div>
         {agent.status === "awaiting_phone" && (
-          <div className="phone-verification">
-            <h3>First, connect in Messages.</h3>
-            {agent.connect?.qr && (
-              <img
-                alt="Scan to connect your phone"
-                src={agent.connect.qr}
-                width={156}
-                height={156}
-              />
-            )}
-            <a
-              className="button button-secondary"
-              href={agent.connect?.smsLink}
-            >
-              Open Messages <ArrowRight size={15} />
-            </a>
-            <p>
-              Send <code>{agent.connect?.command}</code> to{" "}
-              {agent.connect?.number}. Then send this code to your agent:
-            </p>
-            <strong className="verification-code">
-              {agent.phoneChallenge}
-            </strong>
-            {agent.sms && (
-              <p>
-                Prefer SMS? Text <strong>START</strong>, then the verification
-                code, to{" "}
-                <a href={`sms:${agent.sms.number}`}>{agent.sms.number}</a>. SMS
-                readiness: {agent.sms.status}.
-              </p>
-            )}
-            <p className="fine-print">
-              {demo
-                ? "Preview only: the button simulates a confirmed inbound message."
-                : "Use the mobile number you supplied. We check the inbound message directly with Inkbox."}
-            </p>
-            <button
-              className="button button-primary"
-              disabled={busy}
-              onClick={() => void act(verify)}
-            >
-              {busy ? <Loader2 size={16} /> : <CheckCircle2 size={16} />}{" "}
-              {demo
-                ? "Simulate phone confirmation"
-                : "I sent the code · check connection"}
-            </button>
-          </div>
+          <PhoneConnection
+            profile={profile}
+            agent={agent}
+            onChange={phoneConnectionChanged}
+          />
         )}
         {(agent.error ||
           agent.status === "new" ||

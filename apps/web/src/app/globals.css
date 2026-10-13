@@ -3180,6 +3180,7 @@ label small {
   padding: 24px;
   background: #fcf8ff;
   text-align: center;
+  overflow-wrap: anywhere;
 }
 .phone-verification h3 {
   font-size: 15px;
@@ -3205,17 +3206,27 @@ label small {
   padding: 2px 4px;
   border-radius: 4px;
 }
-.verification-code {
-  display: block;
-  background: #fff;
-  border: 1px dashed #d2b5e4;
-  padding: 16px;
-  border-radius: 10px;
-  color: #ae83ca;
-  font-size: 21px;
-  font-weight: 500;
-  letter-spacing: 2px;
-  margin: 15px 0;
+.phone-connection-status {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #5b406b;
+}
+.phone-connection-help {
+  margin-top: 20px;
+  color: #5b406b;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.phone-connection-help summary {
+  cursor: pointer;
+}
+.phone-connection-help p {
+  margin-top: 12px;
 }
 .phone-verification .fine-print {
   font-size: 10px;
@@ -4068,9 +4079,6 @@ label small {
   }
   .phone-verification .button {
     white-space: normal;
-  }
-  .verification-code {
-    font-size: 19px;
   }
   .connection-result {
     margin: 90px auto;

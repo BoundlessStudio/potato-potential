@@ -372,6 +372,74 @@ it("resumes verified phone setup after the provisioning queue fails", async () =
   expect(queue.send).toHaveBeenLastCalledWith("provision", operatorId);
 });
 
+it("automatically confirms only the authenticated owner's bindings and ignores arbitrary client claims", async () => {
+  await call("/onboarding", "verified-owner", input);
+  await lifecycle.provision(operatorId);
+  const pending = (await repo.agent(operatorId))!;
+  const read = vi
+    .spyOn(lifecycle.inkbox, "phoneConnection")
+    .mockResolvedValue({ status: "waiting_message" });
+  queue.send.mockClear();
+  const response = await call(
+    "/onboarding/phone-connection",
+    "verified-owner",
+    {
+      verified: true,
+      ownerId: customerId,
+      identityId: "another-identity",
+      phone: "+14165550999",
+      startedAt: "2000-01-01T00:00:00Z",
+      messageId: "forged",
+    },
+  );
+  expect(response.status).toBe(200);
+  expect((await response.json()).agent).toMatchObject({
+    ownerId: operatorId,
+    status: "awaiting_phone",
+    phoneLink: { status: "waiting_message" },
+  });
+  expect(read).toHaveBeenCalledWith(
+    pending.identityId,
+    "+15195550123",
+    pending.phoneLink!.startedAt,
+    undefined,
+  );
+  expect((await repo.agent(operatorId))!.phoneVerifiedAt).toBeUndefined();
+  expect(await repo.agent(customerId)).toBeNull();
+  expect(queue.send).not.toHaveBeenCalled();
+  expect(
+    (await call("/onboarding/phone-connection", "verified-customer", {}))
+      .status,
+  ).toBe(403);
+  expect(
+    (await call("/onboarding/phone-connection", "invalid-token", {})).status,
+  ).toBe(401);
+  expect(read).toHaveBeenCalledTimes(1);
+});
+
+it("recovers automatic confirmation after lost queue dispatch without asking for another message", async () => {
+  await call("/onboarding", "verified-owner", input);
+  await lifecycle.provision(operatorId);
+  const read = vi.spyOn(lifecycle.inkbox, "phoneConnection");
+  queue.send.mockRejectedValueOnce(new Error("Lost dispatch"));
+  expect(
+    (await call("/onboarding/phone-connection", "verified-owner", {})).status,
+  ).toBe(500);
+  const verifiedAt = (await repo.agent(operatorId))!.phoneVerifiedAt;
+  const response = await call(
+    "/onboarding/phone-connection",
+    "verified-owner",
+    {},
+  );
+  expect(response.status).toBe(200);
+  const data = await response.json();
+  expect(data.agent.status).toBe("provisioning");
+  expect(data.agent.phoneVerifiedAt).toBe(verifiedAt);
+  expect(data.agent.phoneConfirmation).toBeUndefined();
+  expect(read).toHaveBeenCalledTimes(1);
+  expect(queue.send).toHaveBeenLastCalledWith("provision", operatorId);
+});
+
 it("enrolls only the verified operator without requiring a customer invitation", async () => {
   expect((await call("/onboarding", "verified-owner", input)).status).toBe(202);
   expect(await repo.profile(operatorId)).toMatchObject({
@@ -707,7 +775,7 @@ it("lists only beta request records, with one row per email and no invitation cr
   expect(data.requests).toEqual([
     expect.objectContaining({
       email: customerEmail,
-      status: "pending",
+      status: "accepted",
       accountExists: true,
     }),
     expect.objectContaining({
@@ -719,6 +787,230 @@ it("lists only beta request records, with one row per email and no invitation cr
   expect(JSON.stringify(data)).not.toMatch(
     /invitationBox|token_hash|approvedBy|usedBy/,
   );
+});
+
+it("lists an existing customer as accepted without an invitation history", async () => {
+  await repo.saveProfile({
+    ...input,
+    id: customerId,
+    email: customerEmail,
+    createdAt: "2026-01-01T00:00:00Z",
+  });
+  await repo.saveBetaRequest({
+    email: customerEmail,
+    createdAt: "2026-01-01T00:00:00Z",
+    approvedAt: "2026-01-01T00:00:00Z",
+  });
+  const response = await call("/beta/requests", betaToken);
+  expect(response.status).toBe(200);
+  expect((await response.json()).requests).toEqual([
+    expect.objectContaining({
+      email: customerEmail,
+      status: "accepted",
+      accountExists: true,
+    }),
+  ]);
+  expect(
+    (await call("/beta/invitations", betaToken, { email: customerEmail }))
+      .status,
+  ).toBe(409);
+  expect(await repo.invitations()).toHaveLength(0);
+  expect(invitationEmail).not.toHaveBeenCalled();
+});
+
+it("accepts more than ten beta applicants from one IP without signup request quotas", async () => {
+  for (let index = 0; index < 200; index++) {
+    const response = await call("/beta", "", {
+      email: `applicant-${index}@example.com`,
+    });
+    expect(response.status).toBe(202);
+    expect(response.headers.has("ratelimit")).toBe(false);
+  }
+  expect(await repo.betaRequests()).toHaveLength(200);
+  const response = await call("/beta/requests", betaToken);
+  expect(response.status).toBe(200);
+  expect((await response.json()).requests).toHaveLength(200);
+  for (let index = 0; index < 10; index++) {
+    expect(
+      (
+        await call("/beta/invitations", betaToken, {
+          email: `applicant-${index}@example.com`,
+        })
+      ).status,
+    ).toBe(201);
+  }
+  for (let index = 10; index < 13; index++) {
+    const rejected = await call("/beta/invitations", betaToken, {
+      email: `applicant-${index}@example.com`,
+    });
+    expect(rejected.status).toBe(409);
+    expect(await rejected.json()).toMatchObject({
+      error: { code: "beta_capacity_reached" },
+    });
+  }
+  const full = await (await call("/beta/requests", betaToken)).json();
+  expect(full.capacity).toEqual({ limit: 10, used: 10, available: 0 });
+  expect(full.requests[10]).toMatchObject({
+    status: "awaiting_review",
+    placeReserved: false,
+  });
+  expect(
+    (await call("/beta", "", { email: "waitlisted@example.com" })).status,
+  ).toBe(202);
+  expect(
+    (
+      await call("/beta/invitations", betaToken, {
+        email: "applicant-0@example.com",
+      })
+    ).status,
+  ).toBe(201);
+  expect(invitationEmail).toHaveBeenCalledTimes(10);
+  expect(await repo.customers()).toHaveLength(0);
+  expect(queue.send).not.toHaveBeenCalled();
+});
+
+async function pendingPlaces(count: number) {
+  for (let index = 0; index < count; index++)
+    await repo.createInvitation(
+      `reserved-${index}@example.com`,
+      hash(`reserved-${index}`),
+      new Date(Date.now() + 86400000).toISOString(),
+    );
+}
+
+it("counts existing customers and invitations once, including accounts missing from the request list", async () => {
+  await repo.saveProfile({
+    ...input,
+    id: customerId,
+    email: customerEmail,
+    createdAt: new Date().toISOString(),
+  });
+  await repo.createInvitation(
+    customerEmail,
+    hash("accepted"),
+    new Date(Date.now() + 86400000).toISOString(),
+  );
+  await repo.claimInvitation(customerId, customerEmail, hash("accepted"));
+  await repo.createInvitation(
+    customerEmail,
+    hash("duplicate-customer"),
+    new Date(Date.now() + 86400000).toISOString(),
+  );
+  await pendingPlaces(9);
+  await repo.createInvitation(
+    "reserved-0@example.com",
+    hash("duplicate-reservation"),
+    new Date(Date.now() + 86400000).toISOString(),
+  );
+  const list = await (await call("/beta/requests", betaToken)).json();
+  expect(list.requests).toEqual([]);
+  expect(list.capacity).toEqual({ limit: 10, used: 10, available: 0 });
+  await repo.addBetaRequest("waiting@example.com");
+  expect(
+    (
+      await call("/beta/invitations", betaToken, {
+        email: "waiting@example.com",
+      })
+    ).status,
+  ).toBe(409);
+  expect(invitationEmail).not.toHaveBeenCalled();
+  await repo.removeCustomer(customerId);
+  expect(
+    (
+      await call("/beta/invitations", betaToken, {
+        email: "waiting@example.com",
+      })
+    ).status,
+  ).toBe(201);
+});
+
+it("permits only one concurrent approval for the last beta place", async () => {
+  await pendingPlaces(9);
+  const emails = ["last-place-a@example.com", "last-place-b@example.com"];
+  for (const email of emails) await repo.addBetaRequest(email);
+  const responses = await Promise.all(
+    emails.map((email) => call("/beta/invitations", betaToken, { email })),
+  );
+  expect(responses.map((response) => response.status).sort()).toEqual([
+    201, 409,
+  ]);
+  expect(invitationEmail).toHaveBeenCalledOnce();
+  expect(await repo.invitations()).toHaveLength(10);
+  expect(
+    (await (await call("/beta/requests", betaToken)).json()).capacity,
+  ).toEqual({ limit: 10, used: 10, available: 0 });
+});
+
+it.each(["delivery", "invitation write"])(
+  "reserves the last place after a failed %s, permits retry at capacity, and releases it on removal",
+  async (failure) => {
+    await pendingPlaces(9);
+    const email = "retry-place@example.com";
+    await repo.addBetaRequest(email);
+    await repo.addBetaRequest("another@example.com");
+    const error = new HttpError(502, "injected_failure", "Interrupted");
+    if (failure === "delivery") invitationEmail.mockRejectedValueOnce(error);
+    else vi.spyOn(repo, "createInvitation").mockRejectedValueOnce(error);
+    expect((await call("/beta/invitations", betaToken, { email })).status).toBe(
+      502,
+    );
+    const list = await (await call("/beta/requests", betaToken)).json();
+    expect(list.capacity).toEqual({ limit: 10, used: 10, available: 0 });
+    expect(
+      list.requests.find((row: { email: string }) => row.email === email),
+    ).toMatchObject({ status: "approved", placeReserved: true });
+    expect(
+      (
+        await call("/beta/invitations", betaToken, {
+          email: "another@example.com",
+        })
+      ).status,
+    ).toBe(409);
+    expect((await call("/beta/invitations", betaToken, { email })).status).toBe(
+      201,
+    );
+    expect(
+      (await call("/beta/requests", betaToken, { email }, "DELETE")).status,
+    ).toBe(200);
+    expect(
+      (
+        await call("/beta/invitations", betaToken, {
+          email: "another@example.com",
+        })
+      ).status,
+    ).toBe(201);
+    expect(await repo.invitations()).toHaveLength(10);
+  },
+);
+
+it("releases expired unused invitations and ignores accepted invitations belonging to deleted accounts", async () => {
+  await pendingPlaces(9);
+  const email = "expired-place@example.com";
+  await repo.addBetaRequest(email);
+  await repo.createInvitation(
+    email,
+    hash("expired-place"),
+    new Date(Date.now() - 1000).toISOString(),
+  );
+  await repo.createInvitation(
+    "deleted@example.com",
+    hash("deleted-place"),
+    new Date(Date.now() + 86400000).toISOString(),
+  );
+  await repo.claimInvitation(
+    randomUUID(),
+    "deleted@example.com",
+    hash("deleted-place"),
+  );
+  expect(
+    (await (await call("/beta/requests", betaToken)).json()).capacity,
+  ).toEqual({ limit: 10, used: 9, available: 1 });
+  expect((await call("/beta/invitations", betaToken, { email })).status).toBe(
+    201,
+  );
+  expect(
+    (await (await call("/beta/requests", betaToken)).json()).capacity,
+  ).toEqual({ limit: 10, used: 10, available: 0 });
 });
 
 it("public beta signup normalizes and deduplicates concurrent requests without resetting review or creating access", async () => {

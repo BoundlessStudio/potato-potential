@@ -247,6 +247,16 @@ export function createApp(dep: Dependencies) {
   app.get("/api/config", (_req, res) =>
     res.json({ demo: config.demo, sms: config.sms }),
   );
+  // Beta signup has no request quota, including for people sharing an IP.
+  app.post("/api/beta", async (req, res) => {
+    const { email, website } = z
+      .object({ email: emailSchema, website: z.string().max(500).optional() })
+      .parse(req.body);
+    if (!website) await repo.addBetaRequest(email);
+    // Same response for a new request or an email already on the list.
+    // Signup never creates an invitation, an Auth account, or a provider instance.
+    res.status(202).json({ saved: true });
+  });
   app.use(
     "/api",
     rateLimit({
@@ -330,31 +340,6 @@ export function createApp(dep: Dependencies) {
     });
     res.json({ item });
   });
-
-  app.post(
-    "/api/beta",
-    rateLimit({
-      windowMs: 60 * 60_000,
-      limit: config.demo ? 1000 : 12,
-      standardHeaders: "draft-8",
-      legacyHeaders: false,
-      message: {
-        error: {
-          code: "rate_limited",
-          message: "Please try joining the beta list again later.",
-        },
-      },
-    }),
-    async (req, res) => {
-      const { email, website } = z
-        .object({ email: emailSchema, website: z.string().max(500).optional() })
-        .parse(req.body);
-      if (!website) await repo.addBetaRequest(email);
-      // Same response for a new request or an email already on the list.
-      // Signup never creates an invitation, an Auth account, or a provider instance.
-      res.status(202).json({ saved: true });
-    },
-  );
 
   const authClient = config.demo
     ? null
@@ -471,17 +456,9 @@ export function createApp(dep: Dependencies) {
         computerOperationPending(agent))
     )
       await queue.recover?.(actor(req).id).catch(() => {});
-    let challenge: string | undefined;
-    if (agent?.status === "awaiting_phone")
-      await repo.locked(actor(req).id, async () => {
-        // Refresh after taking the lease; cleanup may have started since the first read.
-        agent = await repo.agent(actor(req).id);
-        if (agent?.status === "awaiting_phone")
-          challenge = await lifecycle.challenge(agent);
-      });
     res.json({
       profile,
-      agent: agent ? publicAgent(agent, challenge) : null,
+      agent: agent ? publicAgent(agent) : null,
       email: actor(req).email,
       operator: actor(req).operator,
       invited:
@@ -565,6 +542,16 @@ export function createApp(dep: Dependencies) {
     await lifecycle.verifyPhone(actor(req).id);
     await queue.send("provision", actor(req).id);
     res.status(202).json({ verified: true });
+  });
+  app.post("/api/onboarding/phone-connection", async (req, res) => {
+    await account(req);
+    // The authenticated account supplies all bindings. Ignore client claims
+    // about numbers, identities, messages, timestamps or confirmation.
+    const connection = await lifecycle.checkPhoneConnection(actor(req).id);
+    const agent = await repo.agent(actor(req).id);
+    if (connection.status === "confirmed" && agent?.status === "provisioning")
+      await queue.send("provision", actor(req).id);
+    res.json({ agent: agent ? publicAgent(agent) : null });
   });
   app.put("/api/profile", async (req, res) => {
     const current = await account(req);

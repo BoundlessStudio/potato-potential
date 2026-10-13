@@ -193,6 +193,96 @@ test("shows a searchable request list, protects existing accounts, and sends app
   expect(errors).toEqual([]);
 });
 
+test("shows the ten-place cap, blocks new approvals when full, and allows reserved delivery retries", async ({
+  page,
+}) => {
+  const capacity = { limit: 10, used: 10, available: 0 };
+  const people = [
+    {
+      email: "waiting-cap@example.com",
+      status: "awaiting_review",
+      accountExists: false,
+      placeReserved: false,
+      requestedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      email: "retry-cap@example.com",
+      status: "approved",
+      accountExists: false,
+      placeReserved: true,
+      requestedAt: "2026-01-01T00:00:00Z",
+    },
+    {
+      email: "another-cap@example.com",
+      status: "awaiting_review",
+      accountExists: false,
+      placeReserved: false,
+      requestedAt: "2026-01-01T00:00:00Z",
+    },
+  ];
+  const sent: string[] = [];
+  await page.route("**/api/beta/requests", (route) =>
+    route.fulfill({ json: { requests: people, capacity } }),
+  );
+  await page.route("**/api/beta/invitations", (route) => {
+    const { email } = route.request().postDataJSON();
+    sent.push(email);
+    people.find((row) => row.email === email)!.status = "pending";
+    capacity.used = 10;
+    capacity.available = 0;
+    return route.fulfill({ status: 201, json: { email, demo: false } });
+  });
+  await page.goto("/beta");
+  await unlock(page);
+  await expect(
+    page.getByText("10 / 10 beta places filled", { exact: true }),
+  ).toBeVisible();
+  const approve = page.getByRole("button", {
+    name: "Approve and invite waiting-cap@example.com",
+    exact: true,
+  });
+  await expect(approve).toBeDisabled();
+  await expect(approve).toHaveText("Beta full");
+  const retry = page.getByRole("button", {
+    name: "Send invitation to retry-cap@example.com",
+    exact: true,
+  });
+  await expect(retry).toBeEnabled();
+  await retry.click();
+  await expect(
+    page.getByRole("row").filter({ hasText: "retry-cap@example.com" }),
+  ).toContainText("Invited");
+  expect(sent).toEqual(["retry-cap@example.com"]);
+  capacity.used = 9;
+  capacity.available = 1;
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(approve).toBeEnabled();
+  await expect(
+    page.getByText("9 / 10 beta places filled", { exact: true }),
+  ).toBeVisible();
+  await approve.click();
+  await expect(
+    page.getByText("10 / 10 beta places filled", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Approve and invite another-cap@example.com",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await page.screenshot({
+    path: ".cache/beta-cap-desktop.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: ".cache/beta-cap-mobile.png", fullPage: true });
+});
+
 test("restores token access in the tab, clears it on lock, and expires it when the server rejects it", async ({
   page,
 }) => {

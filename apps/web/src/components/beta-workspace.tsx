@@ -11,7 +11,9 @@ type Applicant = {
   status: "awaiting_review" | "approved" | "accepted" | "pending" | "expired";
   accountExists: boolean;
   accountClosing?: boolean;
+  placeReserved?: boolean;
 };
+type Capacity = { limit: number; used: number; available: number };
 const labels = {
   awaiting_review: "Awaiting review",
   approved: "Approved · send needed",
@@ -73,6 +75,7 @@ export function BetaWorkspace() {
   const [access, setAccess] = useState("");
   const [input, setInput] = useState("");
   const [people, setPeople] = useState<Applicant[] | null>(null);
+  const [capacity, setCapacity] = useState<Capacity | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState<string | null>(null);
@@ -88,6 +91,7 @@ export function BetaWorkspace() {
     sessionStorage.removeItem(storageKey);
     setAccess("");
     setPeople(null);
+    setCapacity(null);
     setSearch("");
     setClosingPerson(null);
   }
@@ -104,15 +108,15 @@ export function BetaWorkspace() {
   async function load(credential: string, signal?: AbortSignal) {
     setLoading(true);
     try {
-      const result = await betaApi<{ requests: Applicant[] }>(
-        credential,
-        "/requests",
-        { signal },
-      );
+      const result = await betaApi<{
+        requests: Applicant[];
+        capacity?: Capacity;
+      }>(credential, "/requests", { signal });
       if (signal?.aborted) return false;
       sessionStorage.setItem(storageKey, credential);
       setAccess(credential);
       setPeople(result.requests);
+      setCapacity(result.capacity || null);
       setInput("");
       return true;
     } catch (error) {
@@ -197,6 +201,7 @@ export function BetaWorkspace() {
           : `${result.email} removed from the beta list.`,
         error: false,
       });
+      await load(access);
     } catch (error) {
       onError(error);
       if (!(error instanceof BetaError && error.status === 401))
@@ -208,6 +213,7 @@ export function BetaWorkspace() {
   const filtered = people?.filter((person) =>
     person.email.toLowerCase().includes(search.trim().toLowerCase()),
   );
+  const full = capacity?.available === 0;
 
   return (
     <main className="standalone operator-workspace">
@@ -260,7 +266,11 @@ export function BetaWorkspace() {
           <div className="page-heading">
             <div>
               <h1>Beta list.</h1>
-              <p>Review the people who requested beta access.</p>
+              <p>
+                {capacity
+                  ? `${capacity.used} / ${capacity.limit} beta places filled`
+                  : "Review the people who requested beta access."}
+              </p>
             </div>
           </div>
           <div className="section-heading">
@@ -350,7 +360,12 @@ export function BetaWorkspace() {
                         ) : (
                           <button
                             className="button button-primary beta-approve"
-                            disabled={busy}
+                            disabled={busy || (full && !person.placeReserved)}
+                            title={
+                              full && !person.placeReserved
+                                ? "All beta places are filled."
+                                : undefined
+                            }
                             onClick={() => void approve(person)}
                             aria-label={`${person.status === "awaiting_review" ? "Approve and invite" : "Send invitation to"} ${person.email}`}
                           >
@@ -363,11 +378,13 @@ export function BetaWorkspace() {
                             )}
                             {sending === person.email
                               ? "Sending…"
-                              : person.status === "awaiting_review"
-                                ? "Approve & invite"
-                                : person.status === "approved"
-                                  ? "Retry invitation"
-                                  : "Send new invitation"}
+                              : full && !person.placeReserved
+                                ? "Beta full"
+                                : person.status === "awaiting_review"
+                                  ? "Approve & invite"
+                                  : person.status === "approved"
+                                    ? "Retry invitation"
+                                    : "Send new invitation"}
                           </button>
                         )}
                       </td>

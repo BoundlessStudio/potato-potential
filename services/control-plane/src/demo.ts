@@ -892,8 +892,14 @@ export class DemoInkbox implements InkboxProvider {
       };
     return { id: randomUUID(), calls: [], transcripts: [] };
   }
-  async findConfirmation() {
-    return true;
+  async phoneConnection() {
+    return {
+      status: "confirmed" as const,
+      confirmation: {
+        channel: "imessage" as const,
+        messageId: "preview-inbound-message",
+      },
+    };
   }
 }
 export async function seedDemo(

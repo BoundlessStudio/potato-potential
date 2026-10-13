@@ -11,6 +11,7 @@ import type {
   FileListing,
   InstanceBudget,
   InstanceUsage,
+  PhoneConnectionStatus,
 } from "@boundless/shared";
 import { HttpError, shellQuote } from "./security";
 import { z } from "zod";
@@ -796,27 +797,35 @@ export class Agent37 implements AgentProvider {
 export interface InkboxProvider {
   request(path: string, init?: RequestInit): Promise<any>;
   removeIdentity(handle: string): Promise<void>;
-  findConfirmation(
+  phoneConnection(
     identityId: string,
     phone: string,
-    code: string,
+    startedAt: string,
     smsNumberId?: string,
-  ): Promise<boolean>;
+  ): Promise<PhoneConnectionResult>;
 }
+export type PhoneConnectionResult = {
+  status: Exclude<PhoneConnectionStatus, "unavailable">;
+  confirmation?: { channel: "imessage" | "sms"; messageId: string };
+};
 export class Inkbox implements InkboxProvider {
   constructor(private key: string) {}
-  private fetch(path: string, init: RequestInit = {}) {
-    return checkedFetch(`https://inkbox.ai/api/v1${path}`, {
-      ...init,
-      headers: {
-        "X-API-Key": this.key,
-        "Content-Type": "application/json",
-        ...init.headers,
+  private fetch(path: string, init: RequestInit = {}, timeoutMs?: number) {
+    return checkedFetch(
+      `https://inkbox.ai/api/v1${path}`,
+      {
+        ...init,
+        headers: {
+          "X-API-Key": this.key,
+          "Content-Type": "application/json",
+          ...init.headers,
+        },
       },
-    });
+      timeoutMs,
+    );
   }
-  async request(path: string, init: RequestInit = {}) {
-    const res = await this.fetch(path, init);
+  async request(path: string, init: RequestInit = {}, timeoutMs?: number) {
+    const res = await this.fetch(path, init, timeoutMs);
     return res.status === 204 ? {} : res.json();
   }
   async removeIdentity(handle: string) {
@@ -830,41 +839,133 @@ export class Inkbox implements InkboxProvider {
         "The identity provider has not confirmed deletion. Retry shortly.",
       );
   }
-  async findConfirmation(
+  async phoneConnection(
     identityId: string,
     phone: string,
-    code: string,
+    startedAt: string,
     smsNumberId?: string,
-  ) {
-    const result = await this.request(
-      `/imessage/messages?${new URLSearchParams({ agent_identity_id: identityId, limit: "100" })}`,
+  ): Promise<PhoneConnectionResult> {
+    const since = Date.parse(startedAt),
+      now = Date.now();
+    if (
+      !Number.isFinite(since) ||
+      since > now ||
+      !/^\+[1-9]\d{7,14}$/.test(phone)
+    )
+      return { status: "waiting_connection" };
+    // Each read is bounded; setup cannot depend on the not-yet-installed gateway.
+    const read = (path: string) => this.request(path, {}, 8000);
+    const fresh = (date: unknown) => {
+      const time = typeof date === "string" ? Date.parse(date) : NaN;
+      return Number.isFinite(time) && time > since && time <= now;
+    };
+    const [assignments, result] = await Promise.all([
+      read(
+        `/imessage/assignments?${new URLSearchParams({ agent_identity_id: identityId, limit: "200" })}`,
+      ),
+      read(
+        `/imessage/messages?${new URLSearchParams({ agent_identity_id: identityId, limit: "100" })}`,
+      ),
+    ]);
+    const rows = Array.isArray(assignments)
+      ? assignments
+      : assignments.assignments || [];
+    const active = rows.filter(
+      (row: any) =>
+        row.agent_identity_id === identityId &&
+        row.remote_number === phone &&
+        row.status === "active" &&
+        typeof row.id === "string",
     );
     const messages = Array.isArray(result)
       ? result
       : result.messages || result.data || [];
-    const verified = messages.some(
+    const message = messages.find(
       (message: any) =>
+        typeof message.id === "string" &&
         message.direction === "inbound" &&
-        !message.is_group &&
-        !message.is_blocked &&
+        message.is_group === false &&
+        message.is_blocked === false &&
         message.remote_number === phone &&
-        String(message.content || "").trim() === code,
+        (message.service === "imessage" || message.service === "sms") &&
+        message.message_type === "message" &&
+        message.status === "received" &&
+        fresh(message.created_at) &&
+        typeof message.content === "string" &&
+        message.content.trim().length > 0 &&
+        !/^(?:connect|disconnect)(?:\s|$)/i.test(message.content.trim()) &&
+        !(
+          message.service === "sms" &&
+          /^(?:START|STOP|UNSUBSCRIBE|CANCEL|END|QUIT|HELP)$/i.test(
+            message.content.trim(),
+          )
+        ) &&
+        active.some(
+          (row: any) =>
+            row.id === message.assignment_id &&
+            Date.parse(row.created_at) <= Date.parse(message.created_at),
+        ),
     );
-    if (verified || !smsNumberId) return verified;
-    const texts = await this.request(
-      `/phone/numbers/${encodeURIComponent(smsNumberId)}/texts?limit=100`,
-    );
-    const own = (Array.isArray(texts) ? texts : []).filter(
-      (message) =>
-        message.direction === "inbound" &&
-        !message.is_blocked &&
-        !message.recipients &&
-        message.remote_phone_number === phone,
-    );
-    return (
-      own.some(
-        (message) => String(message.text).trim().toUpperCase() === "START",
-      ) && own.some((message) => String(message.text).trim() === code)
-    );
+    if (message)
+      return {
+        status: "confirmed",
+        // Inkbox can receive SMS on the same identity-bound Messages assignment.
+        // Record its actual transport; dedicated-number consent remains separate.
+        confirmation: { channel: message.service, messageId: message.id },
+      };
+    if (smsNumberId) {
+      const [number, texts, consent] = await Promise.all([
+        read(`/phone/numbers/${encodeURIComponent(smsNumberId)}`),
+        read(
+          `/phone/numbers/${encodeURIComponent(smsNumberId)}/texts?limit=100`,
+        ),
+        read(`/phone/sms-opt-ins/${encodeURIComponent(phone)}`).catch(
+          (error) => {
+            if (error instanceof HttpError && error.status === 404) return null;
+            throw error;
+          },
+        ),
+      ]);
+      // Never create consent on the user's behalf. Require their fresh START,
+      // a subsequent 1:1 message, and Inkbox's current recipient-consent record.
+      if (
+        number.agent_identity_id === identityId &&
+        number.id === smsNumberId &&
+        consent?.receiver_number === phone &&
+        consent.status === "opted_in" &&
+        consent.source === "sms"
+      ) {
+        const own = (Array.isArray(texts) ? texts : []).filter(
+          (message: any) =>
+            typeof message.id === "string" &&
+            message.direction === "inbound" &&
+            message.is_blocked === false &&
+            !message.recipients &&
+            message.remote_phone_number === phone &&
+            fresh(message.created_at),
+        );
+        const start = own.find(
+          (message: any) =>
+            String(message.text).trim().toUpperCase() === "START",
+        );
+        const hello =
+          start &&
+          own.find(
+            (message: any) =>
+              Date.parse(message.created_at) > Date.parse(start.created_at) &&
+              typeof message.text === "string" &&
+              message.text.trim().length > 0 &&
+              !/^(?:START|STOP|UNSUBSCRIBE|CANCEL|END|QUIT|HELP)$/i.test(
+                message.text.trim(),
+              ),
+          );
+        if (hello)
+          return {
+            status: "confirmed",
+            confirmation: { channel: "sms", messageId: hello.id },
+          };
+      }
+    }
+    return { status: active.length ? "waiting_message" : "waiting_connection" };
   }
 }

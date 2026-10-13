@@ -67,6 +67,15 @@ export type Profile = ProfileInput & {
 };
 export type SetupPhase =
   "identity" | "computer" | "phone" | "plugin" | "persona" | "ready";
+export type PhoneConnectionStatus =
+  "waiting_connection" | "waiting_message" | "confirmed" | "unavailable";
+export type PhoneLink = {
+  identityId: string;
+  phone: string;
+  startedAt: string;
+  checkedAt?: string;
+  status: PhoneConnectionStatus;
+};
 export type Agent = {
   ownerId: string;
   instanceId?: string;
@@ -92,6 +101,8 @@ export type Agent = {
   phoneChallengeBox?: string;
   phoneChallengeExpires?: string;
   phoneVerifiedAt?: string;
+  phoneLink?: PhoneLink;
+  phoneConfirmation?: { channel: "imessage" | "sms"; messageId: string };
   budgetMicros: number;
   mainSessionId?: string;
   suspended?: boolean;
@@ -141,22 +152,21 @@ export type PublicAgent = Omit<
   | "runtimeKeyBox"
   | "runtimeKeyId"
   | "phoneChallengeBox"
+  | "phoneConfirmation"
   | "checkpointRequests"
-> & { phoneChallenge?: string };
-export function publicAgent(
-  agent: Agent,
-  phoneChallenge?: string,
-): PublicAgent {
+>;
+export function publicAgent(agent: Agent): PublicAgent {
   const {
     callbackHash: _hash,
     callbackSecretBox: _secret,
     runtimeKeyBox: _runtime,
     runtimeKeyId: _key,
     phoneChallengeBox: _challenge,
+    phoneConfirmation: _confirmation,
     checkpointRequests: _receipts,
     ...safe
   } = agent;
-  return { ...safe, ...(phoneChallenge ? { phoneChallenge } : {}) };
+  return safe;
 }
 export const itemKinds = [
   "task",

@@ -505,55 +505,6 @@ it("does not treat unconfirmed public removal or malformed metrics as successful
   ).rejects.toMatchObject({ code: "public_removal_unconfirmed" });
   await expect(provider.metrics("abcdefghij")).rejects.toThrow();
 });
-it("accepts only the exact owner inbound 1:1 verification from Inkbox records", async () => {
-  const messages = [
-    {
-      direction: "outbound",
-      remote_number: "+14165550123",
-      content: "VERIFY ABC",
-    },
-    {
-      direction: "inbound",
-      remote_number: "+14165550999",
-      content: "VERIFY ABC",
-    },
-    {
-      direction: "inbound",
-      remote_number: "+14165550123",
-      content: "VERIFY ABC",
-      is_group: true,
-    },
-    {
-      direction: "inbound",
-      remote_number: "+14165550123",
-      content: "VERIFY ABC",
-      is_blocked: true,
-    },
-  ];
-  const fetch = vi.fn().mockImplementation(async () => Response.json(messages));
-  vi.stubGlobal("fetch", fetch);
-  const provider = new Inkbox("admin");
-  expect(
-    await provider.findConfirmation(
-      "own-identity",
-      "+14165550123",
-      "VERIFY ABC",
-    ),
-  ).toBe(false);
-  messages.push({
-    direction: "inbound",
-    remote_number: "+14165550123",
-    content: "VERIFY ABC",
-  });
-  expect(
-    await provider.findConfirmation(
-      "own-identity",
-      "+14165550123",
-      "VERIFY ABC",
-    ),
-  ).toBe(true);
-  expect(fetch.mock.calls[0][0]).toContain("agent_identity_id=own-identity");
-});
 it("sends exact fractional modification-time guards and keeps the catalog unfiltered", async () => {
   const fetch = vi
     .fn()
@@ -629,56 +580,4 @@ it("opens an empty, guarded native memory file when its parent is absent", async
     ),
   ).toEqual({ content: "", modified: 0 });
   expect(fetch).toHaveBeenCalledTimes(1);
-});
-it("requires recipient-initiated SMS consent and the owner verification code", async () => {
-  const texts = [
-    {
-      direction: "outbound",
-      remote_phone_number: "+14165550123",
-      text: "START",
-    },
-    {
-      direction: "inbound",
-      remote_phone_number: "+14165550999",
-      text: "START",
-    },
-    {
-      direction: "inbound",
-      remote_phone_number: "+14165550123",
-      text: "VERIFY ABC",
-    },
-  ];
-  const fetch = vi
-    .fn()
-    .mockImplementation(async (url: string) =>
-      Response.json(url.includes("/texts") ? texts : []),
-    );
-  vi.stubGlobal("fetch", fetch);
-  const inkbox = new Inkbox("admin");
-  expect(
-    await inkbox.findConfirmation(
-      "identity",
-      "+14165550123",
-      "VERIFY ABC",
-      "own-number",
-    ),
-  ).toBe(false);
-  texts.push({
-    direction: "inbound",
-    remote_phone_number: "+14165550123",
-    text: "START",
-  });
-  expect(
-    await inkbox.findConfirmation(
-      "identity",
-      "+14165550123",
-      "VERIFY ABC",
-      "own-number",
-    ),
-  ).toBe(true);
-  expect(
-    fetch.mock.calls.some(([url]) =>
-      url.includes("/phone/numbers/own-number/texts"),
-    ),
-  ).toBe(true);
 });

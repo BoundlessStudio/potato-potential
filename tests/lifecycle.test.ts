@@ -185,15 +185,21 @@ describe("durable lifecycle", () => {
     await lifecycle.provision(profile.id);
     const before = (await repo.agent(profile.id))!;
     const confirmation = vi
-      .spyOn(inkbox, "findConfirmation")
-      .mockResolvedValueOnce(false);
+      .spyOn(inkbox, "phoneConnection")
+      .mockResolvedValueOnce({ status: "waiting_message" });
     await expect(lifecycle.verifyPhone(profile.id)).rejects.toMatchObject({
       code: "phone_not_verified",
     });
     expect(await repo.agent(profile.id)).toMatchObject({
       status: "awaiting_phone",
-      phoneChallengeBox: before.phoneChallengeBox,
+      phoneLink: {
+        startedAt: before.phoneLink!.startedAt,
+        status: "waiting_message",
+      },
     });
+    const pending = (await repo.agent(profile.id))!;
+    pending.phoneLink!.checkedAt = undefined;
+    await repo.saveAgent(pending);
     await Promise.all([
       lifecycle.verifyPhone(profile.id),
       lifecycle.verifyPhone(profile.id),
@@ -219,6 +225,92 @@ describe("durable lifecycle", () => {
       code: "not_ready",
     });
     expect((await repo.agent(profile.id))!.status).toBe("deleting");
+  });
+
+  it("persists one linking-attempt start across reloads/retries and throttles concurrent checks", async () => {
+    await lifecycle.provision(profile.id);
+    const first = (await repo.agent(profile.id))!.phoneLink!;
+    const read = vi
+      .spyOn(inkbox, "phoneConnection")
+      .mockResolvedValue({ status: "waiting_message" });
+    await Promise.all([
+      lifecycle.checkPhoneConnection(profile.id),
+      lifecycle.checkPhoneConnection(profile.id),
+    ]);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith(
+      first.identityId,
+      profile.phone,
+      first.startedAt,
+      undefined,
+    );
+    const reloaded = new Lifecycle(lifecycle.config, repo, a37, inkbox);
+    await reloaded.provision(profile.id);
+    await reloaded.checkPhoneConnection(profile.id);
+    expect((await repo.agent(profile.id))!.phoneLink!.startedAt).toBe(
+      first.startedAt,
+    );
+    expect(read).toHaveBeenCalledTimes(1);
+    expect((await repo.agent(profile.id))!.phoneVerifiedAt).toBeUndefined();
+  });
+
+  it("migrates a pending code-based account with a new freshness boundary and retains its identity/computer", async () => {
+    await lifecycle.provision(profile.id);
+    const before = (await repo.agent(profile.id))!;
+    before.phoneLink = undefined;
+    before.phoneChallengeBox = "legacy-encrypted-code";
+    before.phoneChallengeExpires = new Date(Date.now() + 60000).toISOString();
+    await repo.saveAgent(before);
+    const read = vi
+      .spyOn(inkbox, "phoneConnection")
+      .mockResolvedValue({ status: "waiting_connection" });
+    await lifecycle.checkPhoneConnection(profile.id);
+    const after = (await repo.agent(profile.id))!;
+    expect(after.phoneLink!.startedAt).toBeTruthy();
+    expect(after.phoneChallengeBox).toBeUndefined();
+    expect(after.phoneChallengeExpires).toBeUndefined();
+    expect(after.identityId).toBe(before.identityId);
+    expect(after.instanceId).toBe(before.instanceId);
+    expect(after.phoneVerifiedAt).toBeUndefined();
+    expect(read).toHaveBeenCalledWith(
+      before.identityId,
+      profile.phone,
+      after.phoneLink!.startedAt,
+      undefined,
+    );
+  });
+
+  it("keeps provider outages retryable and records ownership evidence only on confirmation", async () => {
+    await lifecycle.provision(profile.id);
+    vi.spyOn(inkbox, "phoneConnection").mockRejectedValueOnce(
+      new Error("Provider unavailable"),
+    );
+    expect((await lifecycle.checkPhoneConnection(profile.id)).status).toBe(
+      "unavailable",
+    );
+    const pending = (await repo.agent(profile.id))!;
+    expect(pending.status).toBe("awaiting_phone");
+    expect(pending.phoneVerifiedAt).toBeUndefined();
+    pending.phoneLink!.checkedAt = undefined;
+    await repo.saveAgent(pending);
+    expect((await lifecycle.checkPhoneConnection(profile.id)).status).toBe(
+      "confirmed",
+    );
+    expect((await repo.agent(profile.id))!.phoneConfirmation).toEqual({
+      channel: "imessage",
+      messageId: "preview-inbound-message",
+    });
+  });
+
+  it("does not confirm a provider status without a received-message receipt", async () => {
+    await lifecycle.provision(profile.id);
+    vi.spyOn(inkbox, "phoneConnection").mockResolvedValue({
+      status: "confirmed",
+    });
+    expect((await lifecycle.checkPhoneConnection(profile.id)).status).toBe(
+      "unavailable",
+    );
+    expect((await repo.agent(profile.id))!.phoneVerifiedAt).toBeUndefined();
   });
 
   it("deletes an invited account that has not provisioned provider resources", async () => {

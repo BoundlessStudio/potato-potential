@@ -11,6 +11,8 @@ import {
 } from "./invitations";
 
 const emailSchema = z.string().trim().toLowerCase().max(254).pipe(z.email());
+const betaLimit = 10;
+const capacityLease = betaLease("capacity");
 
 export function registerBetaRoutes(
   app: Express,
@@ -49,6 +51,7 @@ export function registerBetaRoutes(
   });
 
   async function accounts() {
+    const customers = await repo.customers();
     const ids = new Set<string>();
     const byEmail = new Map<string, Set<string>>();
     const remember = (email: string, id: string) => {
@@ -58,7 +61,7 @@ export function registerBetaRoutes(
       byEmail.set(canonical, owners);
     };
     if (config.demo) {
-      for (const profile of await repo.customers()) {
+      for (const profile of customers) {
         ids.add(profile.id);
         remember(profile.email, profile.id);
       }
@@ -83,9 +86,7 @@ export function registerBetaRoutes(
         if (data.users.length < 1000) break;
       }
     }
-    const enrolled = new Set(
-      (await repo.customers()).map((profile) => profile.id),
-    );
+    const enrolled = new Set(customers.map((profile) => profile.id));
     return { ids, byEmail, enrolled };
   }
 
@@ -103,17 +104,63 @@ export function registerBetaRoutes(
     return [...owners];
   }
 
+  function capacity(
+    requests: Awaited<ReturnType<typeof repo.betaRequests>>,
+    invitations: Awaited<ReturnType<typeof repo.invitations>>,
+    existing: Awaited<ReturnType<typeof accounts>>,
+  ) {
+    const owners = new Set(existing.enrolled);
+    for (const row of invitations) {
+      const owner = row.used_by || row.usedBy;
+      if (existing.ids.has(owner)) owners.add(owner);
+    }
+    const reserved = new Set<string>();
+    const reserve = (email: string) => {
+      const canonical = email.trim().toLowerCase();
+      if (
+        !accountOwners(canonical, invitations, existing).some((owner) =>
+          owners.has(owner),
+        )
+      )
+        reserved.add(canonical);
+    };
+    for (const row of invitations)
+      if (
+        !(row.used_by || row.usedBy) &&
+        Date.parse(row.expires_at || row.expiresAt) > Date.now()
+      )
+        reserve(row.email);
+    // A failed delivery or invitation write still holds its approved place.
+    for (const request of requests)
+      if (
+        request.approvedAt &&
+        !request.sentAt &&
+        (!request.expiresAt || Date.parse(request.expiresAt) > Date.now())
+      )
+        reserve(request.email);
+    const used = owners.size + reserved.size;
+    return {
+      summary: {
+        limit: betaLimit,
+        used,
+        available: Math.max(0, betaLimit - used),
+      },
+      reserved,
+    };
+  }
+
   router.get("/requests", async (_req, res) => {
     const requests = await repo.betaRequests();
-    if (!requests.length) return res.json({ requests: [] });
     const invitations = await repo.invitations();
     const existing = await accounts();
+    const places = capacity(requests, invitations, existing);
     const closing = new Set(
       (await repo.agents())
         .filter((agent) => agent.status === "deleting")
         .map((agent) => agent.ownerId),
     );
     res.json({
+      capacity: places.summary,
       requests: requests.map((request) => {
         const previous = invitations.filter(
           (row) => row.email.toLowerCase() === request.email,
@@ -124,21 +171,24 @@ export function registerBetaRoutes(
             !(row.used_by || row.usedBy) &&
             Date.parse(row.expires_at || row.expiresAt) > Date.now(),
         );
+        const accountExists =
+          [...(existing.byEmail.get(request.email) || [])].some((id) =>
+            existing.enrolled.has(id),
+          ) ||
+          previous.some((row) => existing.ids.has(row.used_by || row.usedBy));
         return {
           email: request.email,
           requestedAt: request.createdAt,
           approvedAt: request.approvedAt,
           sentAt: request.sentAt,
-          accountExists:
-            [...(existing.byEmail.get(request.email) || [])].some((id) =>
-              existing.enrolled.has(id),
-            ) ||
-            previous.some((row) => existing.ids.has(row.used_by || row.usedBy)),
+          accountExists,
+          placeReserved: places.reserved.has(request.email),
           accountClosing: accountOwners(request.email, previous, existing).some(
             (owner) => closing.has(owner),
           ),
-          status:
-            request.approvedAt && !request.sentAt
+          status: accountExists
+            ? "accepted"
+            : request.approvedAt && !request.sentAt
               ? "approved"
               : pending
                 ? "pending"
@@ -200,80 +250,90 @@ export function registerBetaRoutes(
 
   router.post("/invitations", async (req, res) => {
     const { email } = z.object({ email: emailSchema }).parse(req.body);
-    await repo.locked(betaLease(email), async () => {
-      const request = (await repo.betaRequests()).find(
-        (row) => row.email === email,
-      );
-      if (!request)
-        throw new HttpError(
-          404,
-          "beta_request_not_found",
-          "This email has not requested beta access.",
+    // Share one database-backed lease across approvals for different emails.
+    await repo.locked(capacityLease, () =>
+      repo.locked(betaLease(email), async () => {
+        const requests = await repo.betaRequests();
+        const request = requests.find((row) => row.email === email);
+        if (!request)
+          throw new HttpError(
+            404,
+            "beta_request_not_found",
+            "This email has not requested beta access.",
+          );
+        const invitations = await repo.invitations();
+        const previous = invitations.filter(
+          (row) => row.email.toLowerCase() === email,
         );
-      const previous = (await repo.invitations()).filter(
-        (row) => row.email.toLowerCase() === email,
-      );
-      const existing = await accounts();
-      if (accountOwners(email, previous, existing).length > 1)
-        throw new HttpError(
-          409,
-          "account_ownership_conflict",
-          "This email is linked to more than one account. Resolve the account ownership before inviting it.",
+        const existing = await accounts();
+        if (accountOwners(email, previous, existing).length > 1)
+          throw new HttpError(
+            409,
+            "account_ownership_conflict",
+            "This email is linked to more than one account. Resolve the account ownership before inviting it.",
+          );
+        if (
+          [...(existing.byEmail.get(email) || [])].some((id) =>
+            existing.enrolled.has(id),
+          ) ||
+          previous.some((row) => existing.ids.has(row.used_by || row.usedBy))
+        )
+          throw new HttpError(
+            409,
+            "account_exists",
+            "This email already has a user account. No invitation was sent.",
+          );
+        requireInvitationEmail(config);
+        const key = config.demo ? "a".repeat(64) : config.encryptionKey;
+        const registered = request.invitationBox
+          ? previous.find(
+              (row) =>
+                row.token_hash === hash(unseal(request.invitationBox!, key)),
+            )
+          : undefined;
+        const active = previous.find(
+          (row) =>
+            !(row.used_by || row.usedBy) &&
+            Date.parse(row.expires_at || row.expiresAt) > Date.now(),
         );
-      if (
-        [...(existing.byEmail.get(email) || [])].some((id) =>
-          existing.enrolled.has(id),
-        ) ||
-        previous.some((row) => existing.ids.has(row.used_by || row.usedBy))
-      )
-        throw new HttpError(
-          409,
-          "account_exists",
-          "This email already has a user account. No invitation was sent.",
-        );
-      requireInvitationEmail(config);
-      const key = config.demo ? "a".repeat(64) : config.encryptionKey;
-      const registered = request.invitationBox
-        ? previous.find(
-            (row) =>
-              row.token_hash === hash(unseal(request.invitationBox!, key)),
-          )
-        : undefined;
-      const active = previous.find(
-        (row) =>
-          !(row.used_by || row.usedBy) &&
-          Date.parse(row.expires_at || row.expiresAt) > Date.now(),
-      );
-      if (active && active !== registered)
-        throw new HttpError(
-          409,
-          "invitation_pending",
-          "An active invitation already exists for this email.",
-        );
-      if (request.sentAt && active === registered && active) return;
-      if (
-        !registered ||
-        registered.used_by ||
-        registered.usedBy ||
-        Date.parse(request.expiresAt || "") <= Date.now()
-      ) {
-        request.invitationBox = seal(token(), key);
-        request.expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-        request.sentAt = undefined;
-      }
-      request.approvedAt ||= new Date().toISOString();
-      // Save the retry credential before delivery; failed sends reuse the same invitation.
-      await repo.saveBetaRequest(request);
-      const invitation = unseal(request.invitationBox!, key),
-        digest = hash(invitation);
-      await repo.createInvitation(email, digest, request.expiresAt!);
-      const url = `${config.webOrigin}/signin?invite=${invitation}&email=${encodeURIComponent(email)}`;
-      await (
-        dep.invitationEmail || ((input) => sendInvitationEmail(config, input))
-      )({ email, url, digest });
-      request.sentAt = new Date().toISOString();
-      await repo.saveBetaRequest(request);
-    });
+        if (active && active !== registered)
+          throw new HttpError(
+            409,
+            "invitation_pending",
+            "An active invitation already exists for this email.",
+          );
+        if (request.sentAt && active === registered && active) return;
+        const places = capacity(requests, invitations, existing);
+        if (!places.reserved.has(email) && places.summary.available === 0)
+          throw new HttpError(
+            409,
+            "beta_capacity_reached",
+            "All 10 beta places are filled. Remove an invitation or close an account before approving another request.",
+          );
+        if (
+          !registered ||
+          registered.used_by ||
+          registered.usedBy ||
+          Date.parse(request.expiresAt || "") <= Date.now()
+        ) {
+          request.invitationBox = seal(token(), key);
+          request.expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
+          request.sentAt = undefined;
+        }
+        request.approvedAt ||= new Date().toISOString();
+        // Save the retry credential before delivery; failed sends reuse the same invitation.
+        await repo.saveBetaRequest(request);
+        const invitation = unseal(request.invitationBox!, key),
+          digest = hash(invitation);
+        await repo.createInvitation(email, digest, request.expiresAt!);
+        const url = `${config.webOrigin}/signin?invite=${invitation}&email=${encodeURIComponent(email)}`;
+        await (
+          dep.invitationEmail || ((input) => sendInvitationEmail(config, input))
+        )({ email, url, digest });
+        request.sentAt = new Date().toISOString();
+        await repo.saveBetaRequest(request);
+      }),
+    );
     res.status(201).json({ email, sent: !config.demo, demo: config.demo });
   });
   app.use("/api/beta", router);

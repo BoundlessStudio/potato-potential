@@ -4,6 +4,7 @@ import {
   mergePersona,
   type Agent,
   type Profile,
+  type PhoneLink,
 } from "@boundless/shared";
 import type { Config } from "./config";
 import type { Repository } from "./repository";
@@ -89,20 +90,30 @@ export class Lifecycle {
   private key() {
     return this.config.demo ? "a".repeat(64) : this.config.encryptionKey;
   }
-  /** Mutates state; the caller must hold the owner's lease and use a fresh row. */
-  async challenge(agent: Agent): Promise<string> {
+  /** The caller holds the owner's lease. Reloads/retries never reset freshness. */
+  private async startPhoneLink(
+    profile: Profile,
+    agent: Agent,
+  ): Promise<PhoneLink> {
     if (
-      !agent.phoneChallengeBox ||
-      Date.parse(agent.phoneChallengeExpires || "") < Date.now()
+      !agent.phoneLink ||
+      agent.phoneLink.identityId !== agent.identityId ||
+      agent.phoneLink.phone !== profile.phone ||
+      !Number.isFinite(Date.parse(agent.phoneLink.startedAt))
     ) {
-      const value = `VERIFY ${randomBytes(4).toString("hex").toUpperCase()}`;
-      agent.phoneChallengeBox = seal(value, this.key());
-      agent.phoneChallengeExpires = new Date(
-        Date.now() + 15 * 60_000,
-      ).toISOString();
+      agent.phoneLink = {
+        identityId: agent.identityId!,
+        phone: profile.phone,
+        startedAt: new Date().toISOString(),
+        status: "waiting_connection",
+      };
+      // Pending accounts from the old flow must send a new message; old codes
+      // and history are never treated as evidence for the new attempt.
+      agent.phoneChallengeBox = undefined;
+      agent.phoneChallengeExpires = undefined;
       await this.repo.saveAgent(agent);
     }
-    return unseal(agent.phoneChallengeBox, this.key());
+    return agent.phoneLink;
   }
   async newAgent(ownerId: string): Promise<Agent> {
     const existing = await this.repo.agent(ownerId);
@@ -165,6 +176,8 @@ export class Lifecycle {
           if (phase === "identity") await this.identity(profile, agent);
           if (phase === "computer") await this.computer(profile, agent);
           if (phase === "phone") {
+            if (!agent.phoneVerifiedAt)
+              await this.startPhoneLink(profile, agent);
             const info = await this.inkbox.request(
               `/imessage/triage-number?agent_identity_id=${encodeURIComponent(agent.identityId!)}`,
             );
@@ -175,7 +188,6 @@ export class Lifecycle {
               qr: info.connect_qr_png_data_url,
             };
             if (!agent.phoneVerifiedAt) {
-              await this.challenge(agent);
               agent.status = "awaiting_phone";
               await this.repo.saveAgent(agent);
               return;
@@ -509,7 +521,7 @@ export class Lifecycle {
     agent.runtimeKeyBox = undefined;
     agent.callbackSecretBox = undefined;
   }
-  async verifyPhone(ownerId: string) {
+  async checkPhoneConnection(ownerId: string): Promise<PhoneLink> {
     return this.repo.locked(ownerId, async () => {
       const agent = await this.repo.agent(ownerId);
       const profile = await this.repo.profile(ownerId);
@@ -525,41 +537,71 @@ export class Lifecycle {
         );
       // A lost response or queue failure can lead to another confirmation check.
       // Keep an accepted connection valid while the remaining phases resume.
-      if (agent.phoneVerifiedAt) return;
+      if (agent.phoneVerifiedAt)
+        return (
+          agent.phoneLink || {
+            identityId: agent.identityId,
+            phone: profile.phone,
+            startedAt: agent.phoneVerifiedAt,
+            status: "confirmed",
+          }
+        );
       if (agent.phase !== "phone")
         throw new HttpError(
           409,
           "not_ready",
           "Wait for the phone connection step.",
         );
-      if (
-        !agent.phoneChallengeBox ||
-        Date.parse(agent.phoneChallengeExpires || "") < Date.now()
-      )
+      if (accessPaused(agent))
         throw new HttpError(
           409,
-          "challenge_expired",
-          "Refresh the connection screen for a new verification code.",
+          "agent_suspended",
+          "Resume this companion before connecting your phone.",
         );
-      const code = unseal(agent.phoneChallengeBox, this.key());
-      if (
-        !(await this.inkbox.findConfirmation(
+      const link = await this.startPhoneLink(profile, agent);
+      // Shared by every tab and worker, not an in-memory or client-side limit.
+      if (Date.now() - Date.parse(link.checkedAt || "") < 4000) return link;
+      link.checkedAt = new Date().toISOString();
+      await this.repo.saveAgent(agent);
+      let result;
+      try {
+        result = await this.inkbox.phoneConnection(
           agent.identityId,
           profile.phone,
-          code,
+          link.startedAt,
           agent.sms?.id,
-        ))
-      )
-        throw new HttpError(
-          409,
-          "phone_not_verified",
-          "Send the verification code from your phone, then check again.",
         );
+      } catch {
+        link.status = "unavailable";
+        await this.repo.saveAgent(agent);
+        return link;
+      }
+      link.status = result.status;
+      if (result.status !== "confirmed" || !result.confirmation) {
+        // A bare provider assertion without evidence cannot confirm ownership.
+        if (result.status === "confirmed") link.status = "unavailable";
+        await this.repo.saveAgent(agent);
+        return link;
+      }
       agent.phoneVerifiedAt = new Date().toISOString();
       agent.phoneChallengeBox = undefined;
+      agent.phoneChallengeExpires = undefined;
+      agent.phoneConfirmation = result.confirmation;
       agent.status = "provisioning";
+      agent.updatedAt = new Date().toISOString();
       await this.repo.saveAgent(agent);
+      return link;
     });
+  }
+  // Older open clients can still retry this endpoint, using the same checks.
+  async verifyPhone(ownerId: string) {
+    const link = await this.checkPhoneConnection(ownerId);
+    if (link.status !== "confirmed")
+      throw new HttpError(
+        409,
+        "phone_not_verified",
+        "Connect in Messages, then send Hi in your new agent conversation. We’ll confirm it automatically.",
+      );
   }
   async requestCleanup(ownerId: string) {
     return this.repo.locked(ownerId, async () => {
