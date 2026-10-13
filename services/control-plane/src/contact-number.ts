@@ -26,6 +26,49 @@ export function savedContactNumber(agent: Agent, profile: Profile) {
   return number && !excluded(agent, profile, number) ? number : null;
 }
 
+export const contactNumberUpdateSchema = z
+  .object({
+    number: phoneSchema.nullable(),
+    expectedNumber: phoneSchema.nullable(),
+  })
+  .strict();
+
+export function applyContactNumberUpdate(
+  agent: Agent,
+  profile: Profile,
+  body: z.infer<typeof contactNumberUpdateSchema>,
+) {
+  if (!agent.identityId)
+    throw new HttpError(
+      409,
+      "identity_missing",
+      "Finish connecting your companion first.",
+    );
+  if (body.number && excluded(agent, profile, body.number))
+    throw new HttpError(
+      400,
+      "wrong_contact_number",
+      "Use your companion’s number from their saved contact card, rather than your own number or the Inkbox connection number.",
+    );
+  const current = savedContactNumber(agent, profile);
+  if (current !== body.expectedNumber && current !== body.number)
+    throw new HttpError(
+      409,
+      "contact_number_changed",
+      "This contact number changed elsewhere. Reload it before saving.",
+    );
+  if (body.number) {
+    agent.contactNumber = {
+      number: body.number,
+      identityId: agent.identityId,
+      recipientNumber: profile.phone,
+    };
+  } else {
+    delete agent.contactNumber;
+  }
+  agent.updatedAt = new Date().toISOString();
+}
+
 export function registerContactNumberRoutes(
   app: Express,
   { repo }: Dependencies,
@@ -40,45 +83,11 @@ export function registerContactNumberRoutes(
     res.json({ number: savedContactNumber(agent, profile) });
   });
   app.put("/api/contact-number", async (req, res) => {
-    const body = z
-      .object({
-        number: phoneSchema.nullable(),
-        expectedNumber: phoneSchema.nullable(),
-      })
-      .strict()
-      .parse(req.body);
+    const body = contactNumberUpdateSchema.parse(req.body);
     const number = await repo.locked(owner(req), async () => {
       const agent = await ready(req);
       const profile = await account(req);
-      if (!agent.identityId)
-        throw new HttpError(
-          409,
-          "identity_missing",
-          "Finish connecting your companion first.",
-        );
-      if (body.number && excluded(agent, profile, body.number))
-        throw new HttpError(
-          400,
-          "wrong_contact_number",
-          "Use your companion’s number from their saved contact card, rather than your own number or the Inkbox connection number.",
-        );
-      const current = savedContactNumber(agent, profile);
-      if (current !== body.expectedNumber && current !== body.number)
-        throw new HttpError(
-          409,
-          "contact_number_changed",
-          "This contact number changed elsewhere. Reload it before saving.",
-        );
-      if (body.number) {
-        agent.contactNumber = {
-          number: body.number,
-          identityId: agent.identityId,
-          recipientNumber: profile.phone,
-        };
-      } else {
-        delete agent.contactNumber;
-      }
-      agent.updatedAt = new Date().toISOString();
+      applyContactNumberUpdate(agent, profile, body);
       await repo.saveAgent(agent);
       return body.number;
     });

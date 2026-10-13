@@ -64,7 +64,7 @@ test("shows only About you and Agent notes below Pip’s details and saves each 
     .locator(".settings-layout > .settings-card")
     .first()
     .locator(".companion-contact-details");
-  await expect(contacts.locator("dd")).toHaveCount(1);
+  await expect(contacts.locator("dd")).toHaveCount(2);
   await expect(contacts.locator("input, textarea, button, a")).toHaveCount(0);
   for (const [title] of editors) {
     await page

@@ -16,6 +16,7 @@ import {
 } from "../services/control-plane/src/demo";
 import { Lifecycle } from "../services/control-plane/src/lifecycle";
 import { MemoryRepository } from "../services/control-plane/src/repository";
+import { HttpError } from "../services/control-plane/src/security";
 
 let server: Server,
   base: string,
@@ -221,4 +222,77 @@ it("uses a saved number only for an active connection to this identity and recip
     imessage: "connected",
     contactNumber: number,
   });
+});
+
+it("saves profile and contact drafts in one request and preserves the number when omitted", async () => {
+  const profile = (await repo.profile(DEMO_USER))!;
+  const response = await call("/profile", "PUT", {
+    ...profile,
+    name: "Updated name",
+    contactNumber: { number: "+1 (416) 555-0188", expectedNumber: null },
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({
+    profile: { name: "Updated name", phone: profile.phone },
+    contactNumber: { number },
+  });
+  expect((await repo.profile(DEMO_USER))!).not.toHaveProperty("contactNumber");
+  expect(await (await call()).json()).toEqual({ number });
+  expect(
+    (await call("/profile", "PUT", { ...profile, name: "Another name" }))
+      .status,
+  ).toBe(200);
+  expect(await (await call()).json()).toEqual({ number });
+  expect(
+    (
+      await call("/profile", "PUT", {
+        ...profile,
+        contactNumber: { number: null, expectedNumber: number },
+      })
+    ).status,
+  ).toBe(200);
+  expect(await (await call()).json()).toEqual({ number: null });
+});
+
+it("validates the merged contact draft before writing profile changes and retains both on a computer failure", async () => {
+  await save(number);
+  const profile = (await repo.profile(DEMO_USER))!;
+  const configure = vi.spyOn(dep.lifecycle, "configurePersona");
+  for (const invalid of [profile.phone, "+14165550100"]) {
+    expect(
+      (
+        await call("/profile", "PUT", {
+          ...profile,
+          name: "Should not save",
+          contactNumber: { number: invalid, expectedNumber: number },
+        })
+      ).status,
+    ).toBe(400);
+  }
+  expect(
+    (
+      await call("/profile", "PUT", {
+        ...profile,
+        name: "Should not save",
+        contactNumber: { number: other, expectedNumber: null },
+      })
+    ).status,
+  ).toBe(409);
+  expect(configure).not.toHaveBeenCalled();
+  expect(await repo.profile(DEMO_USER)).toEqual(profile);
+  expect(await (await call()).json()).toEqual({ number });
+  configure.mockRejectedValueOnce(
+    new HttpError(502, "profile_save_failed", "Computer unavailable."),
+  );
+  expect(
+    (
+      await call("/profile", "PUT", {
+        ...profile,
+        name: "Still a draft",
+        contactNumber: { number: other, expectedNumber: number },
+      })
+    ).status,
+  ).toBe(502);
+  expect(await repo.profile(DEMO_USER)).toEqual(profile);
+  expect(await (await call()).json()).toEqual({ number });
 });

@@ -42,6 +42,8 @@ import { registerBudgetRoutes } from "./budget";
 import { registerUsageRoutes } from "./usage";
 import { applyAssistantModel, registerModelRoutes } from "./assistant-model";
 import {
+  applyContactNumberUpdate,
+  contactNumberUpdateSchema,
   registerContactNumberRoutes,
   savedContactNumber,
 } from "./contact-number";
@@ -572,19 +574,35 @@ export function createApp(dep: Dependencies) {
     res.json({ agent: agent ? publicAgent(agent) : null });
   });
   app.put("/api/profile", async (req, res) => {
-    const current = await account(req);
-    const data = profileSchema.parse(req.body);
-    const agent = await ready(req);
-    if (data.phone !== current.phone)
-      throw new HttpError(
-        409,
-        "phone_change_requires_verification",
-        "Contact-number changes need a new verified connection. Keep the current number while updating personality.",
-      );
-    const updated = { ...current, ...data };
-    await lifecycle.configurePersona(updated, agent);
-    await repo.saveProfile(updated);
-    res.json({ profile: updated });
+    const { contactNumber, ...data } = profileSchema
+      .extend({
+        contactNumber: contactNumberUpdateSchema.optional(),
+      })
+      .parse(req.body);
+    const result = await repo.locked(actor(req).id, async () => {
+      const current = await account(req);
+      const agent = await ready(req);
+      if (data.phone !== current.phone)
+        throw new HttpError(
+          409,
+          "phone_change_requires_verification",
+          "Contact-number changes need a new verified connection. Keep the current number while updating personality.",
+        );
+      // Validate the contact draft before changing the computer or stored profile.
+      if (contactNumber)
+        applyContactNumberUpdate(agent, current, contactNumber);
+      const updated = { ...current, ...data };
+      await lifecycle.configurePersona(updated, agent);
+      await repo.saveProfile(updated);
+      if (contactNumber) await repo.saveAgent(agent);
+      return {
+        profile: updated,
+        ...(contactNumber
+          ? { contactNumber: { number: savedContactNumber(agent, updated) } }
+          : {}),
+      };
+    });
+    res.json(result);
   });
   app.delete("/api/account", async (req, res) => {
     await account(req, true);

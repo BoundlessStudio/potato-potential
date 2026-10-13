@@ -1,33 +1,44 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 const number = "+14165550188";
-const editor = (page: import("@playwright/test").Page) =>
-  page.getByRole("form", { name: "Companion contact number" });
-const dialog = (page: import("@playwright/test").Page) =>
+const editor = (page: Page) =>
+  page.getByRole("form", { name: "Companion settings" });
+const summary = (page: Page) => page.locator(".companion-contact-details");
+const dialog = (page: Page) =>
   page.getByRole("dialog", { name: "One companion, wherever you are" });
 
-test("saves a contact number independently, persists after reload and uses it for messages, calls and SMS until cleared", async ({
+test("saves the contact number with the profile, displays only the saved number on the left and clears it through Save changes", async ({
   page,
   context,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   let saved: string | null = null;
-  const writes: unknown[] = [],
-    otherWrites: string[] = [];
-  page.on("request", (request) => {
-    if (
-      request.method() === "PUT" &&
-      /\/api\/(profile|memory)/.test(request.url())
-    )
-      otherWrites.push(request.url());
+  let profileDraft: Record<string, unknown> = {};
+  const writes: any[] = [],
+    unexpected: string[] = [];
+  await page.route("**/api/me", async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    return route.fulfill({
+      json: { ...body, profile: { ...body.profile, ...profileDraft } },
+    });
   });
   await page.route("**/api/contact-number", (route) => {
-    if (route.request().method() === "PUT") {
-      const body = route.request().postDataJSON();
-      writes.push(body);
-      saved = body.number;
-    }
+    if (route.request().method() !== "GET")
+      unexpected.push("Separate contact write");
     return route.fulfill({ json: { number: saved } });
+  });
+  await page.route("**/api/profile", (route) => {
+    const { contactNumber, ...profile } = route.request().postDataJSON();
+    writes.push({ ...profile, contactNumber });
+    profileDraft = profile;
+    if (contactNumber) saved = contactNumber.number;
+    return route.fulfill({
+      json: {
+        profile,
+        ...(contactNumber ? { contactNumber: { number: saved } } : {}),
+      },
+    });
   });
   await page.route("**/api/channels", (route) =>
     route.fulfill({
@@ -43,30 +54,49 @@ test("saves a contact number independently, persists after reload and uses it fo
   await page.goto("/settings");
   const form = editor(page),
     input = form.getByLabel("Pip’s contact number"),
-    save = form.getByRole("button", { name: "Save number", exact: true });
+    save = form.getByRole("button", { name: "Save changes", exact: true });
   await expect(input).toHaveValue("");
-  await expect(save).toBeDisabled();
+  await expect(summary(page)).toContainText("Not saved yet");
+  await expect(summary(page).locator("input,textarea,button")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Save number", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Clear number", exact: true }),
+  ).toHaveCount(0);
   await expect(
     page.getByText("Your verified number", { exact: true }),
   ).toHaveCount(0);
-  await page.getByLabel("Your name", { exact: true }).fill("Unsaved profile");
+  await form.getByLabel("Your name", { exact: true }).fill("Updated profile");
   await page
     .getByRole("textbox", { name: "About you", exact: true })
     .fill("Unsaved memory");
   await input.fill("+1 (416) 555-0188");
+  await expect(summary(page)).toContainText("Not saved yet");
   await save.click();
-  await expect(save).toBeDisabled();
+  await expect(summary(page)).toContainText(number);
   await expect(input).toHaveValue(number);
-  expect(writes).toEqual([{ number, expectedNumber: null }]);
-  expect(otherWrites).toEqual([]);
-  await expect(page.getByLabel("Your name", { exact: true })).toHaveValue(
-    "Unsaved profile",
+  expect(writes[0]).toMatchObject({
+    name: "Updated profile",
+    phone: "+14165550123",
+    contactNumber: { number, expectedNumber: null },
+  });
+  expect(unexpected).toEqual([]);
+  await expect(form.getByLabel("Your name", { exact: true })).toHaveValue(
+    "Updated profile",
   );
   await expect(
     page.getByRole("textbox", { name: "About you", exact: true }),
   ).toHaveValue("Unsaved memory");
   await page.reload();
   await expect(input).toHaveValue(number);
+  await expect(summary(page)).toContainText(number);
+  await expect(form.getByLabel("Your name", { exact: true })).toHaveValue(
+    "Updated profile",
+  );
+  await page
+    .locator(".settings-layout")
+    .screenshot({ path: ".cache/settings-merged-contact-desktop.png" });
   await page
     .locator(".topbar-actions")
     .getByRole("button", { name: "Channels", exact: true })
@@ -99,13 +129,15 @@ test("saves a contact number independently, persists after reload and uses it fo
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
     number,
   );
-  await modal.screenshot({
-    path: ".cache/channels-manual-contact-desktop.png",
-  });
   await page.keyboard.press("Escape");
-  await form.getByRole("button", { name: "Clear number" }).click();
-  await expect(input).toHaveValue("");
-  expect(writes[1]).toEqual({ number: null, expectedNumber: number });
+  await input.fill("");
+  await expect(summary(page)).toContainText(number);
+  await save.click();
+  await expect(summary(page)).toContainText("Not saved yet");
+  expect(writes[1].contactNumber).toEqual({
+    number: null,
+    expectedNumber: number,
+  });
   await page.reload();
   await expect(input).toHaveValue("");
   await page
@@ -123,43 +155,55 @@ test("saves a contact number independently, persists after reload and uses it fo
   ).toHaveCount(0);
 });
 
-test("rejects invalid, personal and router numbers and retains a draft after a failed save on mobile", async ({
+test("preserves the saved number after a failed load and both drafts after a failed merged save on mobile", async ({
   page,
 }) => {
   let failLoad = true,
     failSave = true;
-  const writes: unknown[] = [];
-  await page.route("**/api/contact-number", (route) => {
-    if (route.request().method() === "GET" && failLoad)
+  let saved: string | null = number;
+  const writes: any[] = [];
+  await page.route("**/api/contact-number", (route) =>
+    failLoad
+      ? route.fulfill({
+          status: 502,
+          json: { error: { message: "Contact number unavailable." } },
+        })
+      : route.fulfill({ json: { number: saved } }),
+  );
+  await page.route("**/api/profile", (route) => {
+    const { contactNumber, ...profile } = route.request().postDataJSON();
+    writes.push({ ...profile, contactNumber });
+    if (contactNumber && failSave)
       return route.fulfill({
         status: 502,
-        json: { error: { message: "Contact number unavailable." } },
+        json: { error: { message: "Couldn’t save these changes. Try again." } },
       });
-    if (route.request().method() === "PUT") {
-      const body = route.request().postDataJSON();
-      writes.push(body);
-      if (failSave)
-        return route.fulfill({
-          status: 502,
-          json: { error: { message: "Couldn’t save the number. Try again." } },
-        });
-      return route.fulfill({ json: { number: body.number } });
-    }
-    return route.fulfill({ json: { number: null } });
+    if (contactNumber) saved = contactNumber.number;
+    return route.fulfill({
+      json: {
+        profile,
+        ...(contactNumber ? { contactNumber: { number: saved } } : {}),
+      },
+    });
   });
   await page.setViewportSize({ width: 320, height: 900 });
   await page.goto("/settings");
   const form = editor(page),
     input = form.getByLabel("Pip’s contact number"),
-    save = form.getByRole("button", { name: "Save number", exact: true });
+    save = form.getByRole("button", { name: "Save changes", exact: true });
   await expect(form.getByRole("alert")).toHaveText(
     "Contact number unavailable.",
   );
   await expect(input).toBeDisabled();
-  await expect(save).toBeDisabled();
+  await expect(summary(page)).toContainText("Unavailable");
+  await save.click();
+  await expect.poll(() => writes.length).toBe(1);
+  expect(writes[0].contactNumber).toBeUndefined();
+  expect(saved).toBe(number);
   failLoad = false;
   await form.getByRole("button", { name: "Reload number" }).click();
-  await expect(input).toBeEnabled();
+  await expect(input).toHaveValue(number);
+  await expect(summary(page)).toContainText(number);
   for (const invalid of [
     "4165550188",
     "+1 (416) 555-0123",
@@ -169,15 +213,20 @@ test("rejects invalid, personal and router numbers and retains a draft after a f
     await expect(save).toBeDisabled();
     await expect(form.getByRole("alert")).toBeVisible();
   }
-  expect(writes).toEqual([]);
-  await input.fill(number);
+  expect(writes).toHaveLength(1);
+  await form.getByLabel("Your name", { exact: true }).fill("Unsaved profile");
+  const next = "+14165550189";
+  await input.fill(next);
   await save.click();
   await expect(form.getByRole("alert")).toContainText("Try again");
-  await expect(input).toHaveValue(number);
-  await expect(save).toBeEnabled();
+  await expect(input).toHaveValue(next);
+  await expect(form.getByLabel("Your name", { exact: true })).toHaveValue(
+    "Unsaved profile",
+  );
+  await expect(summary(page)).toContainText(number);
   failSave = false;
   await save.click();
-  await expect(save).toBeDisabled();
+  await expect(summary(page)).toContainText(next);
   await expect(form.getByRole("alert")).toHaveCount(0);
   expect(
     await page.evaluate(
@@ -185,7 +234,6 @@ test("rejects invalid, personal and router numbers and retains a draft after a f
     ),
   ).toBe(true);
   await page
-    .locator(".settings-layout > .settings-card")
-    .first()
-    .screenshot({ path: ".cache/settings-manual-contact-mobile.png" });
+    .locator(".settings-layout")
+    .screenshot({ path: ".cache/settings-merged-contact-mobile.png" });
 });

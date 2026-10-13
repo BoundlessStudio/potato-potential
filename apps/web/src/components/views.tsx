@@ -47,7 +47,10 @@ import { Companion } from "./companion";
 import { FileDownloadLink } from "./file-download-link";
 import { MemorySettings } from "./memory-settings";
 import { BudgetSettings } from "./budget-settings";
-import { ContactNumberSettings } from "./contact-number-settings";
+import {
+  ContactNumberField,
+  useContactNumberSettings,
+} from "./contact-number-settings";
 import { ModelSettings } from "./model-settings";
 import { UsageSettings } from "./usage-settings";
 import { RoutineEditor } from "./routine-editor";
@@ -1139,17 +1142,40 @@ export function Settings({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const contact = useContactNumberSettings({
+    agentName: draft.agentName,
+    ownNumber: profile.phone,
+    routerNumber: agent.connect?.number,
+  });
   useEffect(() => setDraft(profile), [profile]);
   async function save(event: FormEvent) {
     event.preventDefault();
+    if (saving || contact.loading || contact.validation) return;
     setSaving(true);
+    setSaveError("");
     try {
-      await api("/profile", "PUT", draft);
+      const result = await api<{
+        profile: Profile;
+        contactNumber?: { number: string | null };
+      }>("/profile", "PUT", {
+        ...draft,
+        ...(contact.dirty
+          ? {
+              contactNumber: {
+                number: contact.next,
+                expectedNumber: contact.number,
+              },
+            }
+          : {}),
+      });
+      if (result.contactNumber) contact.accept(result.contactNumber.number);
       refresh();
       feedback.onSuccess(
         "A little more you. New conversations will use these preferences.",
       );
     } catch (error) {
+      setSaveError(errorText(error));
       feedback.onError(errorText(error));
     } finally {
       setSaving(false);
@@ -1207,15 +1233,23 @@ export function Settings({
               <dt>Agent email</dt>
               <dd>{agent.agentEmail}</dd>
             </div>
+            <div>
+              <dt>{draft.agentName}’s contact number</dt>
+              <dd>
+                {contact.loading
+                  ? "Loading…"
+                  : !contact.loaded
+                    ? "Unavailable"
+                    : contact.number || "Not saved yet"}
+              </dd>
+            </div>
           </dl>
-          <ContactNumberSettings
-            agentName={draft.agentName}
-            ownNumber={profile.phone}
-            routerNumber={agent.connect?.number}
-            onSuccess={feedback.onSuccess}
-          />
         </div>
-        <form className="settings-card stack" onSubmit={save}>
+        <form
+          className="settings-card stack"
+          onSubmit={save}
+          aria-label="Companion settings"
+        >
           <div className="form-two">
             <label>
               Your name
@@ -1244,6 +1278,11 @@ export function Settings({
               />
             </label>
           </div>
+          <ContactNumberField
+            contact={contact}
+            agentName={draft.agentName}
+            disabled={saving}
+          />
           <label>
             Personality
             <textarea
@@ -1281,9 +1320,14 @@ export function Settings({
               }
             />
           </label>
+          {saveError && (
+            <p role="alert" className="error-inline">
+              {saveError}
+            </p>
+          )}
           <button
             className="button button-primary align-start"
-            disabled={saving}
+            disabled={saving || contact.loading || Boolean(contact.validation)}
           >
             {saving ? <Loader2 size={16} /> : <Check size={16} />}Save changes
           </button>
