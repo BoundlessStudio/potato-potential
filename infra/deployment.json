@@ -5,15 +5,15 @@
   "vercel": {
     "team": "venatio-studios",
     "projectId": "prj_J4lMw2V88c7VgIHAGiBjeyOTduaK",
-    "deploymentId": "dpl_8JNibvjQPdE5TTyR1rZLXF2XGoK8",
-    "deploymentUrl": "https://potato-potential-49d3w8ebc-venatio-studios.vercel.app",
-    "sourceCommit": "7e78a37ad606b10c6a7be029ee1325b95a5c73c0",
+    "deploymentId": "dpl_CCy14qgvtP4wQVi8F2riEnqGU5Th",
+    "deploymentUrl": "https://potato-potential-5ef8br5ci-venatio-studios.vercel.app",
+    "sourceCommit": "9b3c4a92a9f8637ffc6758c8341082a2ff84b1ce",
     "rootDirectory": "apps/web",
     "nodeVersion": "24.x",
     "controlRuntime": "workflow",
-    "sourceCheckoutCommit": "7e78a37ad606b10c6a7be029ee1325b95a5c73c0",
-    "source": "Verified current production source with the companion contact-number editor merged into the right-hand Settings form. The left companion card displays the saved number. Only the five recorded runtime files changed from the verified production baseline. Save changes submits profile and optional contact changes together; existing saved contact data was confirmed unchanged by read-only checks.",
-    "sourceHash": "042296997bbb640d25595b933fc4280b7654c44df8fca0485cd21fcfbf28f17e"
+    "sourceCheckoutCommit": "9b3c4a92a9f8637ffc6758c8341082a2ff84b1ce",
+    "source": "Verified current production source with the separate SMS card removed from the Contact dialog and the Settings contact hint updated to calls and messages. The two recorded runtime files changed relative to the verified baseline. Published desktop/mobile checks retain Email, iMessage and Calls, with saved-number and dedicated-call behavior intact.",
+    "sourceHash": "e62e84be8b92e169cfcbbe3f2251bbac54a045db241026a08970012ab3a04f5b"
   },
   "supabase": {
     "projectRef": "cbipuhnmxyrwfiuwfiou",
@@ -60,7 +60,7 @@
     "typecheck": "passed",
     "unitAdapterDatabaseTests": 538,
     "mockBrowserTests": 130,
-    "githubChecks": "Merged Settings form release 7e78a37 passed GitHub CI: typecheck, all 538 unit/API/provider/database tests, all 130 browser tests and production build. Candidate and custom-domain merged save, saved-number display, model picker, contact links, health, authorization and public assets passed. The existing live contact record remained unchanged.",
+    "githubChecks": "Contact dialog release 9b3c4a9 passed GitHub CI: typecheck, 538 unit/API/provider/database tests, 130 browser tests and production build. Published desktop/320px checks confirm three contact cards, no SMS card/action, preserved Calls/Messages links and saved-number Settings behavior, health, authorization and public assets.",
     "securityRecovery": "Migration 202610060001 applied and recorded before the app release. Custom domain resolves to the recorded deployment. GitHub CI passed 89 unit/adapter/database tests, 25 browser tests, typecheck and production build. Live checks verified server-only invitation RPC privileges, invalid acceptance rollback, retry preservation of edited profiles, operator-only endpoints, consumed-token denial after account deletion and fresh invitation acceptance for a new account with the same email. Public beta signup remains normalized and deduplicated without enrolling a customer. Temporary Auth/customer/invitation/beta fixtures removed; no external email or provider computer created. Pause/resume recovery, phone-code locking, onboarding freezing, cold-wake allowance, delayed takeover and signing-key reuse were checked with mocked providers. No desktop image update required.",
     "dependencyAudit": "Production dependencies: zero known vulnerabilities. Full dependency audit flags the development-only concurrently/shell-quote chain under GHSA-pqg4-j6r4-53mv; upgrading shell-quote to 1.11.0 is a separate follow-up.",
     "bigPossibilities": "published after Little possibilities and before the FAQ; Agent37/Hermes computer and multi-tool work, Brave search, Composio connections, image-dependent Perflo paid tools and Inkbox channels explained with seven native technical disclosures; scheduling explanations retained in Little possibilities; keyboard interaction, no-JavaScript disclosures, reduced motion and local 320/390/768/1024/1440 layouts passed; published desktop/390/320 views and all disclosures verified with no page errors, clipped content or application mutations; footer beta CTA, canonical metadata, crawler content, social image and public asset secret checks passed",
@@ -876,7 +876,67 @@
       "migrations": "No database migration, desktop image release or customer data update required.",
       "limitations": "Authenticated published UI tests use isolated intercepted fixtures. API tests cover combined saves, clearing, omission, wrong/stale numbers and remote profile-write failures. The existing live contact record was read before and after deployment without logging the number or changing it.",
       "verifiedAt": "2026-10-13T23:26:28.138Z"
+    },
+    "contactDialogSmsRemoval": {
+      "deploymentId": "dpl_CCy14qgvtP4wQVi8F2riEnqGU5Th",
+      "deploymentUrl": "https://potato-potential-5ef8br5ci-venatio-studios.vercel.app",
+      "sourceCommit": "9b3c4a92a9f8637ffc6758c8341082a2ff84b1ce",
+      "previousDeploymentId": "dpl_8JNibvjQPdE5TTyR1rZLXF2XGoK8",
+      "sourceHash": "e62e84be8b92e169cfcbbe3f2251bbac54a045db241026a08970012ab3a04f5b",
+      "changedRuntimeFiles": [
+        "apps/web/src/components/channels-dialog.tsx",
+        "apps/web/src/components/contact-number-settings.tsx"
+      ],
+      "behavior": "The Contact tab shows Email, iMessage and Calls. The separate SMS card, copy action and Open SMS link are removed for manually saved and dedicated contact numbers. Existing Messages links, inbound SMS history, saved contact data and dedicated-number calling remain. Settings explains that the saved number is used for calls and messages.",
+      "local": {
+        "typecheck": "passed",
+        "channelsAndSettingsBrowserChecks": 10
+      },
+      "githubChecks": {
+        "conclusion": "success",
+        "databaseId": 38485449483,
+        "headSha": "9b3c4a92a9f8637ffc6758c8341082a2ff84b1ce",
+        "status": "completed",
+        "url": "https://github.com/BoundlessStudio/potato-potential/actions/runs/38485449483",
+        "unitApiProviderDatabaseTests": 538,
+        "browserTests": 130,
+        "typecheck": "passed",
+        "productionBuild": "passed"
+      },
+      "production": {
+        "vercel": "READY and promoted",
+        "customDomain": "verified against deployment id",
+        "origin": "https://potato-potential.rgbknights.com",
+        "health": "passed",
+        "anonymousModelAndContactApis": "denied",
+        "providerLogos": 17,
+        "searchAndKeyboard": "passed",
+        "singleDefaultNull": true,
+        "modelSaveReloadAndClear": true,
+        "contactSaveReloadAndClear": true,
+        "contactCallAndMessageLinks": true,
+        "smsCardRemoved": true,
+        "ownAndRouterNumbersRejected": true,
+        "budgetEditingHidden": true,
+        "modelSavePreservesProfileDraft": true,
+        "memoryDraftPreserved": true,
+        "mergedProfileContactSave": true,
+        "savedContactDisplay": true,
+        "widths": [
+          1280,
+          320
+        ],
+        "pageErrors": [],
+        "unexpectedRequests": [],
+        "publicAssetSecretCheck": true,
+        "publicScripts": 12,
+        "applicationMutations": 0,
+        "authenticatedChecks": "intercepted fixtures against the published UI"
+      },
+      "migrations": "No database migration, desktop image release or customer-data change required.",
+      "limitations": "Authenticated published UI checks use intercepted fixtures. Health and anonymous API guards were checked directly. No real customer settings, messages or provider connections were changed.",
+      "verifiedAt": "2026-10-13T23:47:20.730Z"
     }
   },
-  "validatedAt": "2026-10-13T23:26:28.138Z"
+  "validatedAt": "2026-10-13T23:47:20.730Z"
 }
